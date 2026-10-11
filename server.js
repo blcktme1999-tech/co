@@ -276,6 +276,21 @@ app.post('/api/citizen/start', (req, res) => {
   res.json({ status: 'open', case: publicCase(caseRow) });
 });
 
+app.post('/api/citizen/query', (req, res) => {
+  const citizenName = String(req.body.citizenName || '').trim();
+  const nationalId = String(req.body.nationalId || '').trim().toUpperCase();
+  if (citizenName.length < 2 || nationalId.length < 6) {
+    return res.status(400).json({ error: '請輸入姓名與身分證/居留證號' });
+  }
+
+  const cases = db.prepare(`
+    SELECT * FROM cases
+    WHERE citizen_name = ? AND national_id = ?
+    ORDER BY created_at DESC
+  `).all(citizenName, nationalId);
+  res.json({ cases: cases.map(publicCase) });
+});
+
 app.post('/api/citizen/logout', (req, res) => {
   req.session.caseId = null;
   req.session.citizenName = null;

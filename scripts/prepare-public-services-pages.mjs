@@ -37,11 +37,14 @@ const specialLocalByUrl = new Map([
   ['/public/service', '/service']
 ]);
 
+const caseQueryDir = path.join(root, '案件查詢');
+const caseQueryOutput = 'case-query.html';
+
 const groups = [
-  ['局長信箱', 'chief-mailbox.html', [['反映意見', 'chief-feedback.html'], ['案件查詢', 'chief-query.html']]],
-  ['線上檢舉信箱', 'online-report-mailbox.html', [['反映意見', 'online-report-feedback.html'], ['案件查詢', 'online-report-query.html']]],
+  ['局長信箱', 'chief-mailbox.html', [['反映意見', 'chief-feedback.html']]],
+  ['線上檢舉信箱', 'online-report-mailbox.html', [['反映意見', 'online-report-feedback.html']]],
   ['安珀警報-兒童綁架預警系統', 'amber-alert.html', []],
-  ['申辦事項及電子表單', 'applications.html', [['申請與查詢', 'application-inquiry.html'], ['報案及申訴', '/service'], ['交通類', 'traffic.html'], ['疑涉詐欺境外金融帳戶查詢', 'fraud-account.html']]],
+  ['申辦事項及電子表單', 'applications.html', [['申請與查詢', 'application-inquiry.html'], ['案件查詢', caseQueryOutput], ['報案及申訴', '/service'], ['交通類', 'traffic.html'], ['疑涉詐欺境外金融帳戶查詢', 'fraud-account.html']]],
   ['廉政專區', 'integrity.html', [['最新消息', 'integrity-news.html'], ['廉政宣導', 'integrity-awareness.html'], ['廉政法規', 'integrity-laws.html'], ['公職人員利益衝突迴避身分揭露專區', 'conflict-disclosure.html']]],
   ['退休公務人員專區', 'retired.html', [['最新消息', 'retired-news.html'], ['法規宣導', 'retired-laws.html'], ['表單下載', 'retired-forms.html']]]
 ];
@@ -134,6 +137,18 @@ for (const [slug, title, url, fileHint] of pages) {
   const html = rewritePublicServiceLinks(fs.readFileSync(path.join(sourceDir, sourceFile), 'utf8'));
   fs.writeFileSync(path.join(outputDir, slug), html, 'utf8');
   console.log(`${sourceFile} -> public-services/${slug}`);
+}
+
+const caseQuerySource = fs.existsSync(caseQueryDir)
+  ? fs.readdirSync(caseQueryDir).find((file) => file.endsWith('.html'))
+  : null;
+if (caseQuerySource) {
+  fs.copyFileSync(path.join(caseQueryDir, caseQuerySource), path.join(outputDir, caseQueryOutput));
+  console.log(`${caseQuerySource} -> public-services/${caseQueryOutput}`);
+} else if (fs.existsSync(path.join(outputDir, caseQueryOutput))) {
+  console.log(`kept existing public-services/${caseQueryOutput}`);
+} else {
+  throw new Error('Cannot find case-query source page');
 }
 
 rewriteHomePublicServiceMenu();
