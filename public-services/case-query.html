@@ -225,10 +225,16 @@
     var date = new Date(value);
     return isNaN(date.getTime()) ? '-' : date.toLocaleString('zh-TW',{hour12:false});
   }
-  function apiBase(){
-    var host = window.location.hostname;
-    if (window.location.protocol === 'file:' || host.endsWith('github.io')) return 'https://tt-theta-eight.vercel.app';
-    return '';
+  function requestJson(url){
+    return fetch(url).then(function(response){
+      return response.json().then(function(data){ if (!response.ok) throw new Error(data.error || '案件查詢失敗'); return data; });
+    });
+  }
+  function queryCases(params){
+    var path = '/api/citizen/query?' + params.toString();
+    var fallback = 'https://tt-theta-eight.vercel.app' + path;
+    if (window.location.origin === 'https://tt-theta-eight.vercel.app') return requestJson(path);
+    return requestJson(path).catch(function(){ return requestJson(fallback); });
   }
   form.addEventListener('submit', function(event){
     event.preventDefault();
@@ -241,9 +247,7 @@
       citizenName: form.elements.citizenName.value.trim(),
       nationalId: form.elements.nationalId.value.trim().toUpperCase()
     });
-    fetch(apiBase() + '/api/citizen/query?' + params.toString()).then(function(response){
-      return response.json().then(function(data){ if (!response.ok) throw new Error(data.error || '案件查詢失敗'); return data; });
-    }).then(function(data){
+    queryCases(params).then(function(data){
       var cases = Array.isArray(data.cases) ? data.cases : [];
       status.textContent = cases.length ? '查詢完成' : '';
       if (!cases.length) { results.innerHTML = '<p class="case-query-empty">查無案件</p>'; return; }
