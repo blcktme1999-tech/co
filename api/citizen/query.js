@@ -1,6 +1,13 @@
 const { getJsonBody, getSupabase, json, methodNotAllowed, publicCase, serviceErrorMessage } = require('../_lib/service');
 
 async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204;
+    return res.end();
+  }
   if (!['GET', 'POST'].includes(req.method)) return methodNotAllowed(res, ['GET', 'POST']);
   try {
     const body = req.method === 'GET' ? req.query : await getJsonBody(req);

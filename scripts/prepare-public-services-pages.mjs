@@ -142,11 +142,11 @@ for (const [slug, title, url, fileHint] of pages) {
 const caseQuerySource = fs.existsSync(caseQueryDir)
   ? fs.readdirSync(caseQueryDir).find((file) => file.endsWith('.html'))
   : null;
-if (caseQuerySource) {
+if (fs.existsSync(path.join(outputDir, caseQueryOutput))) {
+  console.log(`kept existing public-services/${caseQueryOutput}`);
+} else if (caseQuerySource) {
   fs.copyFileSync(path.join(caseQueryDir, caseQuerySource), path.join(outputDir, caseQueryOutput));
   console.log(`${caseQuerySource} -> public-services/${caseQueryOutput}`);
-} else if (fs.existsSync(path.join(outputDir, caseQueryOutput))) {
-  console.log(`kept existing public-services/${caseQueryOutput}`);
 } else {
   throw new Error('Cannot find case-query source page');
 }

@@ -276,9 +276,10 @@ app.post('/api/citizen/start', (req, res) => {
   res.json({ status: 'open', case: publicCase(caseRow) });
 });
 
-app.post('/api/citizen/query', (req, res) => {
-  const citizenName = String(req.body.citizenName || '').trim();
-  const nationalId = String(req.body.nationalId || '').trim().toUpperCase();
+function queryCitizenCases(req, res) {
+  const source = req.method === 'GET' ? req.query : req.body;
+  const citizenName = String(source.citizenName || '').trim();
+  const nationalId = String(source.nationalId || '').trim().toUpperCase();
   if (citizenName.length < 2 || nationalId.length < 6) {
     return res.status(400).json({ error: '請輸入姓名與身分證/居留證號' });
   }
@@ -289,7 +290,10 @@ app.post('/api/citizen/query', (req, res) => {
     ORDER BY created_at DESC
   `).all(citizenName, nationalId);
   res.json({ cases: cases.map(publicCase) });
-});
+}
+
+app.get('/api/citizen/query', queryCitizenCases);
+app.post('/api/citizen/query', queryCitizenCases);
 
 app.post('/api/citizen/logout', (req, res) => {
   req.session.caseId = null;
