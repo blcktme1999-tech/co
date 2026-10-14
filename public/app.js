@@ -144,7 +144,7 @@ function statusClass(caseItem) {
 function filterCaseItems(cases, isAdmin, search = '', filter = 'all') {
   const term = search.trim().toLocaleLowerCase();
   return cases.filter((item) => (isAdmin || item.status === 'open') &&
-    (!term || [item.citizenName, item.id, item.nationalId, item.agoraChannel]
+    (!term || [item.citizenName, item.id, item.nationalId, item.agoraChannel, displayCaseNumber(item)]
       .some((value) => String(value || '').toLocaleLowerCase().includes(term))) &&
     (filter === 'all' || (filter === 'active' ? item.status === 'open' && item.interviewStatus === 'active' : item.status === filter)));
 }
@@ -177,7 +177,7 @@ function renderCaseList(root, cases, isAdmin) {
     card.innerHTML = `<button type="button" class="case-card-main" aria-pressed="${state.currentCase?.id === caseItem.id}">
         <span class="case-name-row"><strong>${escapeHtml(caseItem.citizenName)}</strong><span class="case-add-spacer"></span></span>
         <div class="meta"><span class="status ${statusClass(caseItem)}">${caseStatus(caseItem)}</span> · ${escapeHtml(formatTime(caseItem.createdAt))}</div>
-        <div class="meta">${escapeHtml(caseItem.id)}</div>
+        <div class="meta case-number">${escapeHtml(displayCaseNumber(caseItem))}</div>
       </button>
       <button type="button" class="case-add-button" data-action="createRelatedCase">＋新增案件</button>`;
     $('.case-card-main', card).addEventListener('click', () => selectCase(root, caseItem, isAdmin).catch((error) => reportActionError(error, root)));

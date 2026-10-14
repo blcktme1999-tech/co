@@ -356,6 +356,7 @@ body.police-service {
 .police-service .case-card:hover { background: #eaf3fc; color: var(--ink); border-color: #7a9dc0; }
 .police-service .case-card.active { background: #e8f2fd; color: #16375b; border-color: #14559b; box-shadow: inset 3px 0 #14559b; }
 .police-service .case-card .meta { margin-top: 5px; font-size: .8rem; font-weight: 400; }
+.police-service .case-card .case-number { overflow-wrap: normal; word-break: keep-all; }
 .police-service .case-card-main { min-height: 0; }
 .police-service .case-card-main:focus-visible { outline-offset: 5px; }
 .police-service .case-add-button { min-height: 36px; border-radius: 999px; font-weight: 700; }
