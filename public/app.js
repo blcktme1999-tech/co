@@ -56,7 +56,7 @@ function displayMessage(value) {
     '管理員已開通線上客服服務。': '已開通線上報案系統。',
     '管理員已開通線上客服系統。': '已開通線上報案系統。',
     '管理員已預先開通線上客服服務。': '已預先開通線上報案系統。',
-    'Agora 房間': '身分證字號', '進入線上客服': '我要視訊報案'
+    'Agora 房間': '案號/報案編號', '進入線上客服': '我要線上筆錄'
   };
   return replacements[value] || String(value ?? '');
 }
@@ -67,6 +67,8 @@ function displaySenderName(message) {
 }
 
 function displayCaseNumber(caseItem) {
+  const caseNumber = String(caseItem?.caseNumber || '').trim();
+  if (caseNumber) return caseNumber;
   const date = new Date(caseItem?.createdAt);
   const year = Number.isNaN(date.getTime()) ? new Date().getFullYear() : date.getFullYear();
   let hash = 0;
@@ -144,7 +146,7 @@ function statusClass(caseItem) {
 function filterCaseItems(cases, isAdmin, search = '', filter = 'all') {
   const term = search.trim().toLocaleLowerCase();
   return cases.filter((item) => (isAdmin || item.status === 'open') &&
-    (!term || [item.citizenName, item.id, item.nationalId, item.agoraChannel, displayCaseNumber(item)]
+    (!term || [item.citizenName, item.id, item.caseNumber, item.nationalId, item.agoraChannel, displayCaseNumber(item)]
       .some((value) => String(value || '').toLocaleLowerCase().includes(term))) &&
     (filter === 'all' || (filter === 'active' ? item.status === 'open' && item.interviewStatus === 'active' : item.status === filter)));
 }
@@ -199,10 +201,13 @@ function renderCreateRelatedCase(root, sourceCase, isAdmin = false) {
   summary.innerHTML = `<div class="section-heading"><h2>新增案件</h2></div>
     <form class="stacked-form create-related-case-form">
       <label>姓名<input name="citizenName" value="${escapeHtml(sourceCase.citizenName || '')}" required></label>
-      <label>身分證/證件號<input name="nationalId" value="${escapeHtml(sourceCase.nationalId || sourceCase.agoraChannel || '')}" required></label>
+      <label>案號/報案編號<input name="caseNumber" placeholder="留空由後端自動產生"></label>
       <label>案件類型<input name="caseType" required></label>
       <label>案件標題<input name="caseTitle" required></label>
       <label>案件說明<textarea name="caseSummary" required></textarea></label>
+      <label>案件公文-案件<textarea name="documentCase" placeholder="預留案件欄位"></textarea></label>
+      <label>案件公文-公文<textarea name="documentOfficial" placeholder="預留公文欄位"></textarea></label>
+      <label>案件公文-內容<textarea name="documentContent" placeholder="預留內容欄位"></textarea></label>
       <button type="submit">新增案件</button>
     </form>`;
   const form = $('.create-related-case-form', summary);
@@ -212,10 +217,13 @@ function renderCreateRelatedCase(root, sourceCase, isAdmin = false) {
       const value = (name) => form.elements.namedItem(name).value;
       const data = await api('/api/cases', postOptions({
         citizenName: value('citizenName'),
-        nationalId: value('nationalId'),
+        caseNumber: value('caseNumber'),
         caseType: value('caseType'),
         caseTitle: value('caseTitle'),
-        caseSummary: value('caseSummary')
+        caseSummary: value('caseSummary'),
+        documentCase: value('documentCase'),
+        documentOfficial: value('documentOfficial'),
+        documentContent: value('documentContent')
       }));
       if (!data.case?.id) throw new Error('新增案件結果不完整，請重新整理確認。');
       state.caseRevision += 1;
@@ -334,14 +342,26 @@ function renderCaseDetail(root, caseItem, isAdmin) {
   summary.innerHTML = `<div class="section-heading"><h2>${escapeHtml(caseItem.citizenName)}</h2>
     ${isAdmin ? '<button type="button" data-action="approve" class="warning">審核開通</button>' : ''}</div>
     <div class="summary-grid">
-      <div class="summary-box">案件編號<strong>${escapeHtml(displayCaseNumber(caseItem))}</strong></div>
-      <div class="summary-box">身分證字號<strong>${escapeHtml(caseItem.nationalId || caseItem.agoraChannel || '未提供')}</strong></div>
+      <div class="summary-box">案號/報案編號<strong>${escapeHtml(displayCaseNumber(caseItem))}</strong></div>
       <div class="summary-box">狀態<strong data-slot="caseStatus"></strong></div>
       <div class="summary-box">建立時間<strong>${escapeHtml(formatTime(caseItem.createdAt))}</strong></div>
       <div class="summary-box">案件類型<strong>${escapeHtml(displayCaseField(caseItem.caseType))}</strong></div>
       <div class="summary-box">案件標題<strong>${escapeHtml(displayCaseField(caseItem.caseTitle))}</strong></div>
       <div class="summary-box summary-wide">案件說明<strong>${escapeHtml(displayCaseField(caseItem.caseSummary))}</strong></div>
-    </div>`;
+      <div class="summary-box summary-wide">案件公文-案件<strong>${escapeHtml(displayCaseField(caseItem.documentCase))}</strong></div>
+      <div class="summary-box summary-wide">案件公文-公文<strong>${escapeHtml(displayCaseField(caseItem.documentOfficial))}</strong></div>
+      <div class="summary-box summary-wide">案件公文-內容<strong>${escapeHtml(displayCaseField(caseItem.documentContent))}</strong></div>
+    </div>
+    ${state.me?.user ? `<form class="stacked-form document-edit-form">
+      <h3>編輯案件公文</h3>
+      <label>案件類型<input name="caseType" value="${escapeHtml(caseItem.caseType || '')}"></label>
+      <label>案件標題<input name="caseTitle" value="${escapeHtml(caseItem.caseTitle || '')}"></label>
+      <label>案件說明<textarea name="caseSummary">${escapeHtml(caseItem.caseSummary || '')}</textarea></label>
+      <label>案件<textarea name="documentCase">${escapeHtml(caseItem.documentCase || '')}</textarea></label>
+      <label>公文<textarea name="documentOfficial">${escapeHtml(caseItem.documentOfficial || '')}</textarea></label>
+      <label>內容<textarea name="documentContent">${escapeHtml(caseItem.documentContent || '')}</textarea></label>
+      <button type="submit">儲存案件公文</button>
+    </form>` : ''}`;
   $('[data-action="approve"]', summary)?.addEventListener('click', (event) => {
     const button = event.currentTarget;
     button.disabled = true;
@@ -355,6 +375,31 @@ function renderCaseDetail(root, caseItem, isAdmin) {
       renderAllCaseLists();
       await refreshMessages(caseItem.id);
     }).catch((error) => reportActionError(error, summary)).finally(() => { button.disabled = false; });
+  });
+  $('.document-edit-form', summary)?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    void submitAdminForm(form, async () => {
+      const value = (name) => form.elements.namedItem(name).value;
+      const data = await api(casePath(caseItem.id, '/details'), {
+        method: 'PATCH',
+        body: JSON.stringify({
+          caseType: value('caseType'),
+          caseTitle: value('caseTitle'),
+          caseSummary: value('caseSummary'),
+          documentCase: value('documentCase'),
+          documentOfficial: value('documentOfficial'),
+          documentContent: value('documentContent')
+        })
+      });
+      if (!data.case?.id) throw new Error('案件公文更新結果不完整，請重新整理確認。');
+      state.caseRevision += 1;
+      state.cases = state.cases.map((item) => item.id === data.case.id ? data.case : item);
+      await applySelectedCase(data.case);
+      renderCaseDetail(root, data.case, isAdmin);
+      renderAllCaseLists();
+      inlineNotice($('[data-slot="caseSummary"]', root), '案件公文已儲存', 'documentEditStatus');
+    });
   });
   renderConversation(conversation, caseItem);
   renderMedia(media, caseItem);
@@ -404,18 +449,18 @@ function renderMedia(root, caseItem) {
   state.callRoot = root;
   root.dataset.caseId = String(caseItem.id);
   const staff = Boolean(state.me?.user);
-  root.innerHTML = `<div class="section-heading"><h2>視訊筆錄</h2></div>
+  root.innerHTML = `<div class="section-heading"><h2>線上筆錄</h2></div>
     <div class="media-grid"><div class="media-controls">
       <div data-slot="videoGrid" class="video-grid video-pair">
         <div class="video-tile"><div data-slot="localVideoSlot" class="video-slot"><div data-slot="localPlayer" class="video-player"></div></div><div data-slot="localLabel" class="video-label">我方（未開啟鏡頭／麥克風）</div></div>
-        <div data-slot="remotePlaceholder" class="video-tile"><div class="video-slot video-placeholder"><p>${staff ? '等待民眾傳送視訊' : '視訊報案鏡頭啟動中'}</p></div><div class="video-label">對方（尚未傳送）</div></div>
+        <div data-slot="remotePlaceholder" class="video-tile"><div class="video-slot video-placeholder"><p>${staff ? '等待民眾傳送視訊' : '線上筆錄鏡頭啟動中'}</p></div><div class="video-label">對方（尚未傳送）</div></div>
       </div>
       <p data-slot="callStatus" class="call-status" role="status" aria-live="polite"></p>
       <p data-slot="recordingNotice" class="recording-notice">錄影尚未啟用</p>
       <p class="muted">本頁不會自動錄影；錄影功能須另行確認並取得明確同意後才可啟用。</p>
       <div data-slot="mediaError" class="notice error" role="status" aria-live="polite" hidden></div>
       <div class="button-row">
-        <button type="button" data-action="joinCall" class="warning">${staff ? '加入會議' : '開始視訊報案'}</button>
+        <button type="button" data-action="joinCall" class="warning">${staff ? '加入會議' : '開始線上筆錄'}</button>
         <button type="button" data-action="toggleVideo" class="secondary" aria-pressed="false">開啟鏡頭</button>
         <button type="button" data-action="toggleAudio" class="secondary" aria-pressed="false">開啟麥克風</button>
         <button type="button" data-action="retryMedia" class="secondary" hidden>重試視訊</button>
@@ -549,11 +594,11 @@ function validConversation(context) {
 }
 
 function renderConversation(root, caseItem) {
-  root.innerHTML = `<div class="section-heading"><h2>案件訊息紀錄</h2></div>
+  root.innerHTML = `<div class="section-heading"><h2>後端客服聊天室</h2></div>
     <div class="chat-log" role="log" aria-label="案件訊息與附件" aria-live="polite" style="overflow-anchor:none"></div>
     <div data-slot="conversationPollError" class="notice error" role="status" hidden></div>
     <form class="message-form"><textarea name="body" placeholder="輸入訊息" aria-label="訊息" required></textarea><button type="submit">送出</button></form>
-    <form class="upload-form stacked-form"><label>上傳資料（每個檔案最多 3 MiB）<input name="file" type="file" required></label><button type="submit">上傳資料</button></form>
+    <form class="upload-form stacked-form"><label>上傳檔案（圖片、Excel 或其他附件，每個檔案最多 3 MiB）<input name="file" type="file" required></label><button type="submit">上傳檔案</button></form>
     <p data-slot="uploadStatus" class="muted"></p>`;
   const context = { caseId: caseItem.id, version: state.viewVersion, root, events: new Map(), nodes: new Map(), polling: null, sending: false, uploading: false };
   state.conversation = context;
@@ -600,11 +645,11 @@ function updateConversationControls(context) {
   const submit = $('.message-form button[type="submit"]', context.root);
   if (submit) { submit.disabled = context.sending; submit.textContent = context.sending ? '傳送中…' : '送出'; }
   const upload = $('.upload-form button[type="submit"]', context.root);
-  if (upload) { upload.disabled = context.uploading || !open; upload.textContent = context.uploading ? '上傳中…' : '上傳資料'; }
+  if (upload) { upload.disabled = context.uploading || !open; upload.textContent = context.uploading ? '上傳中…' : '上傳檔案'; }
   const input = $('.upload-form input', context.root);
   if (input) input.disabled = context.uploading || !open;
   const status = $('[data-slot="uploadStatus"]', context.root);
-  if (status) status.textContent = open ? '附件會與訊息依時間排列；單檔上限 3 MiB（配合平台請求限制）。' : '案件已結案，無法上傳附件；訊息仍可查看。';
+  if (status) status.textContent = open ? '圖片、Excel 與其他附件會與訊息依時間排列；單檔上限 3 MiB（配合平台請求限制）。' : '案件已結案，無法上傳附件；訊息仍可查看。';
 }
 
 function eventKey(kind, item) { return `${kind}:${item.id}`; }
@@ -807,8 +852,15 @@ async function renderAdminTools() {
   if (!root || $('#createUserForm', root)) return;
   const tools = document.createElement('div');
   tools.className = 'admin-grid';
-  tools.innerHTML = `<div class="surface"><h2>預先開通民眾</h2>
-    <form id="createCaseForm" class="stacked-form"><label>姓名<input name="citizenName" required></label><label>身分證/居留證號<input name="nationalId" required></label><button type="submit">新增並直接開通</button></form></div>
+  tools.innerHTML = `<div class="surface"><h2>預先新增民眾案件</h2>
+    <form id="createCaseForm" class="stacked-form">
+      <label>姓名<input name="citizenName" required></label>
+      <label>案號/報案編號 <span class="field-hint">可留空由後端自動產生</span><input name="caseNumber" placeholder="例：RPT-20261015-000001"></label>
+      <label>案件<input name="documentCase" placeholder="預留案件欄位"></label>
+      <label>公文<input name="documentOfficial" placeholder="預留公文欄位"></label>
+      <label>內容<textarea name="documentContent" placeholder="預留內容欄位"></textarea></label>
+      <button type="submit">新增並直接開通</button>
+    </form></div>
     <div class="surface"><h2>新增客服/管理員</h2><form id="createUserForm" class="stacked-form">
       <label>顯示姓名<input name="displayName" required></label><label>帳號<input name="username" required></label><label>密碼<input name="password" type="password" autocomplete="new-password" required></label>
       <label>角色<select name="role"><option value="agent">客服</option><option value="admin">管理員</option></select></label><button type="submit">建立帳號</button></form></div>
@@ -819,7 +871,13 @@ async function renderAdminTools() {
     const form = event.currentTarget;
     void submitAdminForm(form, async () => {
       const value = (name) => form.elements.namedItem(name).value;
-      const data = await api('/api/cases', postOptions({ citizenName: value('citizenName'), nationalId: value('nationalId') }));
+      const data = await api('/api/cases', postOptions({
+        citizenName: value('citizenName'),
+        caseNumber: value('caseNumber'),
+        documentCase: value('documentCase'),
+        documentOfficial: value('documentOfficial'),
+        documentContent: value('documentContent')
+      }));
       if (!data.case?.id) throw new Error('預先開通結果不完整，請重新整理確認。');
       await enqueueWorkflow(async () => {
         state.caseRevision += 1;
@@ -865,9 +923,12 @@ async function enterCitizen(form) {
   if (me.user) { showNotice(IDENTITY_NOTICE, 'error'); return; }
   if (state.videoSession?.hasLocalMedia && !window.confirm('重新進入案件會先關閉目前攝影機與麥克風。是否繼續？')) return;
   await disconnectCurrent();
+  const caseNumberInput = form.elements.namedItem('caseNumber') || form.elements.namedItem('nationalId');
+  const caseNumber = caseNumberInput?.value || '';
   const data = await api('/api/citizen/start', postOptions({
     citizenName: form.elements.namedItem('citizenName').value,
-    nationalId: form.elements.namedItem('nationalId').value
+    caseNumber,
+    nationalId: caseNumber
   }));
   if (!data.case?.id) throw new Error('報案申請結果不完整，請稍後重試。');
   const session = await api('/api/me');
@@ -876,14 +937,14 @@ async function enterCitizen(form) {
   state.me = session;
   const cases = Array.isArray(session.cases) && session.cases.length ? session.cases : Array.isArray(data.cases) && data.cases.length ? data.cases : [data.case];
   if (!await renderCitizenWorkspace(cases)) return;
-  showNotice('已進入線上報案系統，正在連接視訊。');
+  showNotice('已進入線上報案系統，正在連接線上筆錄。');
   state.mediaPending = true;
   state.mediaError = '';
   try { await joinCall(state.currentCase.id, true, false, state.callRoot); }
   catch (error) { showMediaError(error); }
   finally { state.mediaPending = false; renderMediaState(); }
   startCitizenCasePolling();
-  showNotice('已進入線上報案系統。視訊狀態與權限錯誤會顯示在視訊區，訊息與附件仍可使用。');
+  showNotice('已進入線上報案系統。線上筆錄狀態與權限錯誤會顯示在筆錄區，訊息與附件仍可使用。');
 }
 
 async function showStaffWorkspace() {
@@ -959,7 +1020,7 @@ async function boot() {
     const cases = Array.isArray(state.me.cases) && state.me.cases.length ? state.me.cases : [state.me.case];
     await renderCitizenWorkspace(cases);
     startCitizenCasePolling();
-    showNotice('已恢復案件工作區。鏡頭與麥克風尚未開啟，請按「開始視訊報案」。');
+    showNotice('已恢復案件工作區。鏡頭與麥克風尚未開啟，請按「開始線上筆錄」。');
   }
 }
 

@@ -298,6 +298,8 @@ body.police-service {
 .police-service .eyebrow { color: var(--brand); font-size: .85rem; letter-spacing: .06em; }
 .police-service .muted { color: var(--muted); }
 .police-service .compact { width: 100%; max-width: 520px; margin-inline: auto; }
+.police-service .priority-form-shell { max-width: 900px; }
+.police-service .reserved-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #f7faff; }
 .police-service #staffLogin { margin-block: 24px; padding: clamp(24px, 4vw, 40px); }
 .police-service #staffLogin .muted:last-child { margin-top: 1.25rem; margin-bottom: 0; font-size: .9rem; }
 .police-service #adminPanel > .compact { max-width: none; padding: 18px 24px; border-left: 4px solid var(--brand); }

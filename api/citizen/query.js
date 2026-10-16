@@ -1,4 +1,4 @@
-const { getJsonBody, getSupabase, json, methodNotAllowed, publicCase, serviceErrorMessage } = require('../_lib/service');
+const { getJsonBody, getSupabase, json, methodNotAllowed, normalizeCaseNumber, publicCase, publicFile, serviceErrorMessage } = require('../_lib/service');
 
 async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -12,9 +12,9 @@ async function handler(req, res) {
   try {
     const body = req.method === 'GET' ? req.query : await getJsonBody(req);
     const citizenName = String(body.citizenName || '').trim();
-    const nationalId = String(body.nationalId || '').trim().toUpperCase();
-    if (citizenName.length < 2 || nationalId.length < 6) {
-      return json(res, 400, { error: '請輸入姓名與身分證/居留證號' });
+    const caseNumber = normalizeCaseNumber(body.caseNumber || body.nationalId);
+    if (citizenName.length < 2 || caseNumber.length < 3) {
+      return json(res, 400, { error: '請輸入姓名與案號' });
     }
 
     const client = getSupabase();
@@ -22,13 +22,23 @@ async function handler(req, res) {
       .from('service_cases')
       .select('*')
       .eq('citizen_name', citizenName)
-      .eq('national_id', nationalId)
+      .eq('case_number', caseNumber)
       .order('created_at', { ascending: false });
     if (result.error) throw result.error;
 
-    json(res, 200, { cases: (result.data || []).map(publicCase) });
+    const caseIds = (result.data || []).map((item) => item.id);
+    let filesByCaseId = {};
+    if (caseIds.length) {
+      const files = await client.from('service_files').select('*').in('case_id', caseIds).order('created_at', { ascending: false });
+      if (files.error) throw files.error;
+      filesByCaseId = (files.data || []).reduce((groups, file) => {
+        (groups[file.case_id] ||= []).push(publicFile(file));
+        return groups;
+      }, {});
+    }
+    json(res, 200, { cases: (result.data || []).map(publicCase), filesByCaseId });
   } catch (error) {
-    json(res, 500, { error: serviceErrorMessage(error, '案件查詢失敗') });
+    json(res, 500, { error: serviceErrorMessage(error, '案件公文查詢失敗') });
   }
 }
 

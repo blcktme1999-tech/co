@@ -28,13 +28,13 @@
         <form id="citizenForm" class="stacked-form" aria-describedby="entryHelp">
           <label for="citizenName">姓名 <span class="field-hint">必填，請填寫真實姓名</span></label>
           <input id="citizenName" name="citizenName" type="text" autocomplete="name" placeholder="請輸入姓名" required>
-          <label for="nationalId">身分證／居留證號 <span class="field-hint">必填</span></label>
-          <input id="nationalId" name="nationalId" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="請輸入身分證或居留證號碼" required>
-          <button class="entry-submit" type="submit">我要視訊報案 <span aria-hidden="true">→</span></button>
+          <label for="caseNumber">案號／報案編號 <span class="field-hint">必填，須與後台資料完全相符</span></label>
+          <input id="caseNumber" name="caseNumber" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="請輸入案號或報案編號" required>
+          <button class="entry-submit" type="submit">我要線上筆錄 <span aria-hidden="true">→</span></button>
         </form>
         <div id="entryHelp" class="entry-disclaimer">
           <strong>服務使用提醒</strong>
-          <p>首次使用須先申請開通，送出資料不代表案件已正式受理。視訊服務需允許瀏覽器使用攝影機與麥克風；請在安全、安靜的環境操作，並妥善保護個人資料。</p>
+          <p>請輸入後台預先建立的姓名與案號；兩者需完全相符才可進入。線上筆錄需允許瀏覽器使用攝影機與麥克風；請在安全、安靜的環境操作，並妥善保護個人資料。</p>
           <p>如遇緊急事故或人身安全危險，請立即撥打 <a href="tel:110">110</a>，勿等待線上審核。</p>
         </div>
       </div>
@@ -79,7 +79,7 @@
           <button type="button" class="secondary" data-action="refreshCases">重新整理</button>
         </div>
         <div class="case-tools">
-          <label>搜尋案件<input type="search" data-action="searchCases" placeholder="姓名或案件編號" autocomplete="off"></label>
+          <label>搜尋案件<input type="search" data-action="searchCases" placeholder="姓名或案號" autocomplete="off"></label>
           <label>案件狀態<select data-action="filterCases">
             <option value="all">全部案件</option>
             <option value="pending">待審核</option>

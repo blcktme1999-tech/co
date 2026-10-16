@@ -7,12 +7,12 @@
 <meta name=viewport content="width=device-width, initial-scale=1">
 <meta name=buildtime content=39.1010010103.00.91>
 <meta property=og:type content=website>
-<meta property=og:title content=司法院全球資訊網-查詢服務-案件相關查詢>
+<meta property=og:title content=案件公文>
 <meta property=og:url content=https://www.judicial.gov.tw/tw/np-118-1.html>
 <meta property=og:site_name content=司法院全球資訊網>
-<meta property=og:description content=司法院全球資訊網-查詢服務-案件相關查詢>
+<meta property=og:description content=案件公文>
 <meta property=og:image content=https://www.judicial.gov.tw/Styles/Unit001/images/favicon.png><meta name=google-site-verification content=NstxphkfM4Z0S1zg2ru36Ou5d1ji4WhLdqhvuLK5Rhc>
-<title>司法院全球資訊網-查詢服務-案件相關查詢</title>
+<title>案件公文</title>
 <!--[if lt IE 9]>
 			<script src="https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
 			<script src="https://oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js"></script>
@@ -56,7 +56,7 @@
  <li><a title=案件相關查詢 href=/public-services/case-query.html>案件相關查詢</a></li>
  </ul>
  </div>
- <h2 class=title>案件相關查詢</h2>
+ <h2 class=title>案件公文</h2>
  <div class=function_panel>
  <div class=font_size>
  <ul>
@@ -72,14 +72,14 @@
  </div>
  </div><section class="np case-query-section">
  <form id="caseQueryForm" class="case-query-form" aria-describedby="caseQueryHelp">
-  <p id="caseQueryHelp" class="case-query-help">請輸入申請時留下的姓名與身分證／居留證號，查詢案件進度。</p>
+  <p id="caseQueryHelp" class="case-query-help">請輸入姓名與案號／報案編號；兩者完全相符後可查看自己的案件公文。</p>
   <div class="case-query-fields">
    <label for="caseQueryName">姓名</label>
    <input id="caseQueryName" name="citizenName" type="text" autocomplete="name" required>
-   <label for="caseQueryNationalId">身分證／居留證號</label>
-   <input id="caseQueryNationalId" name="nationalId" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" required>
+   <label for="caseQueryCaseNumber">案號／報案編號</label>
+   <input id="caseQueryCaseNumber" name="caseNumber" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" required>
   </div>
-  <button type="submit" class="case-query-submit">案件進度查詢</button>
+  <button type="submit" class="case-query-submit">案件公文查詢</button>
  </form>
  <div id="caseQueryStatus" class="case-query-status" role="status" aria-live="polite"></div>
  <div id="caseQueryResults" class="case-query-results" aria-live="polite"></div>
@@ -103,6 +103,7 @@
   if (!form || !status || !results) return;
   function escapeHtml(value){return String(value == null ? '' : value).replace(/[&<>"'']/g,function(char){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char];});}
   function caseNumber(item){
+    if (item && item.caseNumber) return String(item.caseNumber);
     var date = new Date(item && item.createdAt);
     var year = isNaN(date.getTime()) ? new Date().getFullYear() : date.getFullYear();
     var hash = 0;
@@ -116,9 +117,18 @@
     var date = new Date(value);
     return isNaN(date.getTime()) ? '-' : date.toLocaleString('zh-TW',{hour12:false});
   }
+  function displayField(value){return String(value || '').trim() || '未提供';}
+  function fileLinks(files){
+    if (!Array.isArray(files) || !files.length) return '尚無附件';
+    return files.map(function(file){
+      var name = escapeHtml(file.originalName || '附件');
+      var url = String(file.url || '');
+      return url ? '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' + name + '</a>' : name;
+    }).join('<br>');
+  }
   function requestJson(url){
     return fetch(url).then(function(response){
-      return response.json().then(function(data){ if (!response.ok) throw new Error(data.error || '案件查詢失敗'); return data; });
+      return response.json().then(function(data){ if (!response.ok) throw new Error(data.error || '案件公文查詢失敗'); return data; });
     });
   }
   function queryCases(params){
@@ -136,18 +146,19 @@
     button.disabled = true;
     var params = new URLSearchParams({
       citizenName: form.elements.citizenName.value.trim(),
-      nationalId: form.elements.nationalId.value.trim().toUpperCase()
+      caseNumber: form.elements.caseNumber.value.trim().toUpperCase()
     });
     queryCases(params).then(function(data){
       var cases = Array.isArray(data.cases) ? data.cases : [];
+      var filesByCaseId = data.filesByCaseId || {};
       status.textContent = cases.length ? '查詢完成' : '';
-      if (!cases.length) { results.innerHTML = '<p class="case-query-empty">查無案件</p>'; return; }
-      results.innerHTML = '<table class="case-query-table"><thead><tr><th>案件編號</th><th>狀態</th><th>建立時間</th></tr></thead><tbody>' + cases.map(function(item){
-        return '<tr><td>' + escapeHtml(caseNumber(item)) + '</td><td>' + escapeHtml(statusText(item.status)) + '</td><td>' + escapeHtml(formatTime(item.createdAt)) + '</td></tr>';
+      if (!cases.length) { results.innerHTML = '<p class="case-query-empty">查無資料</p>'; return; }
+      results.innerHTML = '<table class="case-query-table"><thead><tr><th>案號</th><th>狀態</th><th>案件</th><th>公文</th><th>內容</th><th>附件</th><th>建立時間</th></tr></thead><tbody>' + cases.map(function(item){
+        return '<tr><td>' + escapeHtml(caseNumber(item)) + '</td><td>' + escapeHtml(statusText(item.status)) + '</td><td>' + escapeHtml(displayField(item.documentCase || item.caseTitle)) + '</td><td>' + escapeHtml(displayField(item.documentOfficial)) + '</td><td>' + escapeHtml(displayField(item.documentContent || item.caseSummary)) + '</td><td>' + fileLinks(filesByCaseId[item.id]) + '</td><td>' + escapeHtml(formatTime(item.createdAt)) + '</td></tr>';
       }).join('') + '</tbody></table>';
     }).catch(function(error){
       status.className = 'case-query-status error';
-      status.textContent = error.message === 'Failed to fetch' ? '無法連線到案件查詢服務，請確認使用正式網站網址。' : (error.message || '案件查詢失敗');
+      status.textContent = error.message === 'Failed to fetch' ? '無法連線到案件公文服務，請確認使用正式網站網址。' : (error.message || '案件公文查詢失敗');
     }).finally(function(){ button.disabled = false; });
   });
 })();

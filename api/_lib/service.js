@@ -60,6 +60,20 @@ function serviceErrorMessage(error, fallback) {
   return message || fallback;
 }
 
+function generateCaseNumber() {
+  const date = new Date();
+  const day = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+  return `RPT-${day}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+}
+
+function normalizeCaseNumber(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+function ensureCaseNumber(value) {
+  return normalizeCaseNumber(value) || generateCaseNumber();
+}
+
 function parseCookies(req) {
   const header = req.headers.cookie || '';
   return header.split(';').reduce((cookies, part) => {
@@ -124,10 +138,14 @@ function publicCase(row) {
     id: row.id,
     citizenName: row.citizen_name || row.citizenName,
     nationalId: row.national_id || row.nationalId || row.agoraChannel,
+    caseNumber: row.case_number || row.caseNumber || row.national_id || row.nationalId || row.agoraChannel,
     caseType: row.case_type || row.caseType || '',
     caseTitle: row.case_title || row.caseTitle || '',
     caseSummary: row.case_summary || row.caseSummary || '',
-    agoraChannel: row.national_id || row.agoraChannel,
+    documentCase: row.document_case || row.documentCase || '',
+    documentOfficial: row.document_official || row.documentOfficial || '',
+    documentContent: row.document_content || row.documentContent || '',
+    agoraChannel: row.case_number || row.caseNumber || row.national_id || row.agoraChannel,
     status: row.status,
     interviewStatus: row.interview_status || row.interviewStatus || 'idle',
     assignedUserId: row.assigned_user_id || row.assignedUserId,
@@ -214,7 +232,9 @@ async function requireCaseAccess(req, res, client, caseId) {
   }
   const citizenOwnsCase = session.citizenName && session.nationalId &&
     result.data.citizen_name === session.citizenName && result.data.national_id === session.nationalId;
-  if (session.user || session.caseId === caseId || citizenOwnsCase) return { session, caseRow: result.data };
+  const citizenOwnsCaseByNumber = session.citizenName && session.caseNumber &&
+    result.data.citizen_name === session.citizenName && result.data.case_number === session.caseNumber;
+  if (session.user || session.caseId === caseId || citizenOwnsCase || citizenOwnsCaseByNumber) return { session, caseRow: result.data };
   json(res, 403, { error: '無權存取此案件' });
   return null;
 }
@@ -235,6 +255,8 @@ module.exports = {
   createSessionCookie,
   dataUrlToBuffer,
   ensureDefaultAdmin,
+  ensureCaseNumber,
+  generateCaseNumber,
   getConfig,
   getJsonBody,
   getSupabase,
@@ -245,6 +267,7 @@ module.exports = {
   publicMessage,
   publicUser,
   readSession,
+  normalizeCaseNumber,
   requireAdmin,
   requireCaseAccess,
   requireStaff,

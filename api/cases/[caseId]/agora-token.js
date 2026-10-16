@@ -10,8 +10,8 @@ module.exports = async function handler(req, res) {
     const access = await requireCaseAccess(req, res, client, req.query.caseId);
     if (!access) return;
 
-    const channelName = access.caseRow.id;
-    const account = access.session.user ? `${access.session.user.role}-${access.session.user.id}` : `citizen-${access.caseRow.id}`;
+    const channelName = access.caseRow.case_number || access.caseRow.id;
+    const account = access.session.user ? `${access.session.user.role}-${access.session.user.id}` : `citizen-${access.caseRow.case_number || access.caseRow.id}`;
     const token = RtcTokenBuilder.buildTokenWithUserAccount(
       config.agoraAppId,
       config.agoraAppCertificate,

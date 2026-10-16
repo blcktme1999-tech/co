@@ -67,6 +67,14 @@ db.exec(`
     id TEXT PRIMARY KEY,
     citizen_name TEXT NOT NULL,
     national_id TEXT NOT NULL,
+    case_number TEXT,
+    case_type TEXT NOT NULL DEFAULT '',
+    case_title TEXT NOT NULL DEFAULT '',
+    case_summary TEXT NOT NULL DEFAULT '',
+    document_case TEXT NOT NULL DEFAULT '',
+    document_official TEXT NOT NULL DEFAULT '',
+    document_content TEXT NOT NULL DEFAULT '',
+    interview_status TEXT NOT NULL DEFAULT 'idle',
     status TEXT NOT NULL CHECK(status IN ('pending', 'open')) DEFAULT 'pending',
     assigned_user_id TEXT,
     created_at TEXT NOT NULL,
@@ -98,8 +106,59 @@ db.exec(`
   );
 `);
 
+function tableColumns(table) {
+  return new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((column) => column.name));
+}
+
+function addColumnIfMissing(table, column, definition) {
+  if (!tableColumns(table).has(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
+
+function generateCaseNumber() {
+  const date = new Date();
+  const day = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+  return `RPT-${day}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+}
+
+function normalizeCaseNumber(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+function ensureCaseNumber(value) {
+  return normalizeCaseNumber(value) || generateCaseNumber();
+}
+
+function dataUrlToBuffer(dataUrl) {
+  const match = String(dataUrl || '').match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return null;
+  return { mimeType: match[1], buffer: Buffer.from(match[2], 'base64') };
+}
+
+function safeName(name) {
+  return String(name || 'attachment')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 120) || 'attachment';
+}
+
+for (const [column, definition] of [
+  ['case_number', 'TEXT'],
+  ['case_type', "TEXT NOT NULL DEFAULT ''"],
+  ['case_title', "TEXT NOT NULL DEFAULT ''"],
+  ['case_summary', "TEXT NOT NULL DEFAULT ''"],
+  ['document_case', "TEXT NOT NULL DEFAULT ''"],
+  ['document_official', "TEXT NOT NULL DEFAULT ''"],
+  ['document_content', "TEXT NOT NULL DEFAULT ''"],
+  ['interview_status', "TEXT NOT NULL DEFAULT 'idle'"]
+]) addColumnIfMissing('cases', column, definition);
+
+for (const row of db.prepare("SELECT id FROM cases WHERE case_number IS NULL OR case_number = ''").all()) {
+  db.prepare('UPDATE cases SET case_number = ? WHERE id = ?').run(generateCaseNumber(), row.id);
+}
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS cases_case_number_unique ON cases(case_number) WHERE case_number IS NOT NULL AND case_number <> '';");
 
 const defaultAdminPassword = process.env.ADMIN_PASSWORD || 'admin';
 const defaultAdmin = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
@@ -117,7 +176,7 @@ const sessionMiddleware = session({
   cookie: { sameSite: 'lax' }
 });
 
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '8mb' }));
 app.use(sessionMiddleware);
 app.use('/uploads', express.static(UPLOAD_DIR));
 app.use('/public', express.static(PUBLIC_DIR));
@@ -202,8 +261,17 @@ function publicCase(row) {
   return {
     id: row.id,
     citizenName: row.citizen_name,
-    agoraChannel: row.national_id,
+    nationalId: row.national_id,
+    caseNumber: row.case_number || row.national_id,
+    caseType: row.case_type || '',
+    caseTitle: row.case_title || '',
+    caseSummary: row.case_summary || '',
+    documentCase: row.document_case || '',
+    documentOfficial: row.document_official || '',
+    documentContent: row.document_content || '',
+    agoraChannel: row.case_number || row.national_id,
     status: row.status,
+    interviewStatus: row.interview_status || 'idle',
     assignedUserId: row.assigned_user_id,
     createdAt: row.created_at,
     approvedAt: row.approved_at
@@ -227,7 +295,7 @@ function requireAdmin(req, res, next) {
 }
 
 function requireCitizenCase(req, res, next) {
-  if (!req.session.caseId) return res.status(401).json({ error: '請先以姓名與證號進入服務' });
+  if (!req.session.caseId) return res.status(401).json({ error: '請先以姓名與案號進入服務' });
   next();
 }
 
@@ -240,31 +308,23 @@ app.get('/api/me', (req, res) => {
   const caseRow = req.session.caseId
     ? db.prepare('SELECT * FROM cases WHERE id = ?').get(req.session.caseId)
     : null;
-  res.json({ user: currentUser(req), case: publicCase(caseRow) });
+  const cases = !req.session.user && req.session.citizenName && req.session.caseNumber
+    ? db.prepare('SELECT * FROM cases WHERE citizen_name = ? AND case_number = ? ORDER BY created_at DESC')
+      .all(req.session.citizenName, req.session.caseNumber)
+    : [];
+  res.json({ user: currentUser(req), case: publicCase(caseRow || cases[0]), cases: cases.map(publicCase) });
 });
 
 app.post('/api/citizen/start', (req, res) => {
   const citizenName = String(req.body.citizenName || '').trim();
-  const nationalId = String(req.body.nationalId || '').trim().toUpperCase();
-  if (citizenName.length < 2 || nationalId.length < 6) {
-    return res.status(400).json({ error: '請輸入姓名與身分證/居留證號' });
+  const caseNumber = normalizeCaseNumber(req.body.caseNumber || req.body.nationalId);
+  if (citizenName.length < 2 || caseNumber.length < 3) {
+    return res.status(400).json({ error: '請輸入姓名與案號' });
   }
 
-  let caseRow = db.prepare('SELECT * FROM cases WHERE citizen_name = ? AND national_id = ?')
-    .get(citizenName, nationalId);
-
-  if (!caseRow) {
-    const caseId = id();
-    db.prepare(`
-      INSERT INTO cases (id, citizen_name, national_id, status, created_at)
-      VALUES (?, ?, ?, 'pending', ?)
-    `).run(caseId, citizenName, nationalId, now());
-    db.prepare(`
-      INSERT INTO messages (id, case_id, sender_type, sender_name, body, created_at)
-      VALUES (?, ?, 'system', '系統', ?, ?)
-    `).run(id(), caseId, '民眾已送出線上報案開通申請，等待審核。', now());
-    caseRow = db.prepare('SELECT * FROM cases WHERE id = ?').get(caseId);
-  }
+  const caseRow = db.prepare('SELECT * FROM cases WHERE citizen_name = ? AND case_number = ?')
+    .get(citizenName, caseNumber);
+  if (!caseRow) return res.status(404).json({ error: '查無資料' });
 
   if (caseRow.status !== 'open') {
     req.session.caseId = null;
@@ -273,23 +333,32 @@ app.post('/api/citizen/start', (req, res) => {
 
   req.session.caseId = caseRow.id;
   req.session.citizenName = citizenName;
+  req.session.caseNumber = caseNumber;
   res.json({ status: 'open', case: publicCase(caseRow) });
 });
 
 function queryCitizenCases(req, res) {
   const source = req.method === 'GET' ? req.query : req.body;
   const citizenName = String(source.citizenName || '').trim();
-  const nationalId = String(source.nationalId || '').trim().toUpperCase();
-  if (citizenName.length < 2 || nationalId.length < 6) {
-    return res.status(400).json({ error: '請輸入姓名與身分證/居留證號' });
+  const caseNumber = normalizeCaseNumber(source.caseNumber || source.nationalId);
+  if (citizenName.length < 2 || caseNumber.length < 3) {
+    return res.status(400).json({ error: '請輸入姓名與案號' });
   }
 
   const cases = db.prepare(`
     SELECT * FROM cases
-    WHERE citizen_name = ? AND national_id = ?
+    WHERE citizen_name = ? AND case_number = ?
     ORDER BY created_at DESC
-  `).all(citizenName, nationalId);
-  res.json({ cases: cases.map(publicCase) });
+  `).all(citizenName, caseNumber);
+  const filesByCaseId = {};
+  for (const item of cases) {
+    filesByCaseId[item.id] = db.prepare(`
+      SELECT id, uploaded_by AS uploadedBy, original_name AS originalName, stored_name AS storedName,
+        mime_type AS mimeType, size, kind, created_at AS createdAt
+      FROM files WHERE case_id = ? ORDER BY created_at DESC
+    `).all(item.id).map((file) => ({ ...file, url: `/uploads/${file.storedName}` }));
+  }
+  res.json({ cases: cases.map(publicCase), filesByCaseId });
 }
 
 app.get('/api/citizen/query', queryCitizenCases);
@@ -298,6 +367,7 @@ app.post('/api/citizen/query', queryCitizenCases);
 app.post('/api/citizen/logout', (req, res) => {
   req.session.caseId = null;
   req.session.citizenName = null;
+  req.session.caseNumber = null;
   res.json({ ok: true });
 });
 
@@ -325,6 +395,57 @@ app.post('/api/staff/logout', requireStaff, (req, res) => {
 app.get('/api/cases', requireStaff, (req, res) => {
   const rows = db.prepare('SELECT * FROM cases ORDER BY created_at DESC').all();
   res.json({ cases: rows.map(publicCase) });
+});
+
+app.post('/api/cases', requireStaff, (req, res) => {
+  const citizenName = String(req.body.citizenName || '').trim();
+  const caseNumber = ensureCaseNumber(req.body.caseNumber || req.body.nationalId);
+  const caseType = String(req.body.caseType || '').trim();
+  const caseTitle = String(req.body.caseTitle || '').trim();
+  const caseSummary = String(req.body.caseSummary || '').trim();
+  const documentCase = String(req.body.documentCase || '').trim();
+  const documentOfficial = String(req.body.documentOfficial || '').trim();
+  const documentContent = String(req.body.documentContent || '').trim();
+  if (citizenName.length < 2 || caseNumber.length < 3) return res.status(400).json({ error: '請輸入姓名與案號' });
+
+  try {
+    const caseId = id();
+    db.prepare(`
+      INSERT INTO cases (id, citizen_name, national_id, case_number, case_type, case_title, case_summary, document_case, document_official, document_content, status, created_at, approved_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+    `).run(caseId, citizenName, caseNumber, caseNumber, caseType, caseTitle, caseSummary, documentCase, documentOfficial, documentContent, now(), now());
+    const caseRow = db.prepare('SELECT * FROM cases WHERE id = ?').get(caseId);
+    const creator = req.session.user?.displayName || '服務人員';
+    db.prepare(`
+      INSERT INTO messages (id, case_id, sender_type, sender_name, body, created_at)
+      VALUES (?, ?, 'system', '系統', ?, ?)
+    `).run(id(), caseId, `${creator}已新增案件並開通線上報案服務。`, now());
+    res.json({ case: publicCase(caseRow) });
+  } catch (error) {
+    if (String(error.message || '').includes('UNIQUE')) return res.status(409).json({ error: '案號已存在' });
+    throw error;
+  }
+});
+
+app.patch('/api/cases/:caseId/details', requireStaff, (req, res) => {
+  const target = db.prepare('SELECT * FROM cases WHERE id = ?').get(req.params.caseId);
+  if (!target) return res.status(404).json({ error: '找不到案件' });
+  const fields = {
+    caseType: String(req.body.caseType || '').trim(),
+    caseTitle: String(req.body.caseTitle || '').trim(),
+    caseSummary: String(req.body.caseSummary || '').trim(),
+    documentCase: String(req.body.documentCase || '').trim(),
+    documentOfficial: String(req.body.documentOfficial || '').trim(),
+    documentContent: String(req.body.documentContent || '').trim()
+  };
+  db.prepare(`
+    UPDATE cases
+    SET case_type = ?, case_title = ?, case_summary = ?, document_case = ?, document_official = ?, document_content = ?
+    WHERE id = ?
+  `).run(fields.caseType, fields.caseTitle, fields.caseSummary, fields.documentCase, fields.documentOfficial, fields.documentContent, target.id);
+  const updated = db.prepare('SELECT * FROM cases WHERE id = ?').get(target.id);
+  io.to(`case:${target.id}`).emit('case:updated', publicCase(updated));
+  res.json({ case: publicCase(updated) });
 });
 
 app.post('/api/cases/:caseId/approve', requireAdmin, (req, res) => {
@@ -362,18 +483,23 @@ app.get('/api/cases/:caseId/files', (req, res) => {
   res.json({ files: rows });
 });
 
-app.post('/api/cases/:caseId/files', upload.single('video'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: '請選擇影片檔案' });
-  if (!canAccessCase(req, req.params.caseId)) return res.status(403).json({ error: '無權上傳此案件影片' });
+app.post('/api/cases/:caseId/files', (req, res) => {
+  const parsed = dataUrlToBuffer(req.body.dataUrl);
+  if (!parsed) return res.status(400).json({ error: '檔案格式錯誤，請重新上傳' });
+  if (parsed.buffer.length > 3 * 1024 * 1024) return res.status(413).json({ error: '目前每個附件上限為 3 MiB，請縮小檔案後再上傳。' });
+  if (!canAccessCase(req, req.params.caseId)) return res.status(403).json({ error: '無權上傳此案件附件' });
   const caseRow = db.prepare('SELECT * FROM cases WHERE id = ?').get(req.params.caseId);
   if (!caseRow || caseRow.status !== 'open') return res.status(400).json({ error: '案件尚未開通' });
   const uploader = req.session.user?.displayName || req.session.citizenName || '民眾';
   const kind = req.body.kind === 'recording' ? 'recording' : 'upload';
   const fileId = id();
+  const originalName = String(req.body.fileName || 'attachment').slice(0, 255);
+  const storedName = `${Date.now()}-${id()}-${safeName(originalName)}`;
+  fs.writeFileSync(path.join(UPLOAD_DIR, storedName), parsed.buffer);
   db.prepare(`
     INSERT INTO files (id, case_id, uploaded_by, original_name, stored_name, mime_type, size, kind, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(fileId, caseRow.id, uploader, req.file.originalname, req.file.filename, req.file.mimetype, req.file.size, kind, now());
+  `).run(fileId, caseRow.id, uploader, originalName, storedName, parsed.mimeType, parsed.buffer.length, kind, now());
   const saved = db.prepare(`
     SELECT id, uploaded_by AS uploadedBy, original_name AS originalName, stored_name AS storedName,
       mime_type AS mimeType, size, kind, created_at AS createdAt
@@ -392,10 +518,10 @@ app.post('/api/cases/:caseId/agora-token', (req, res) => {
   if (!caseRow) return res.status(404).json({ error: '找不到案件' });
   if (caseRow.status !== 'open') return res.status(400).json({ error: '案件尚未審核開通，無法進入視訊筆錄' });
 
-  const channelName = caseRow.national_id;
+  const channelName = caseRow.case_number || caseRow.national_id;
   const account = req.session.user
     ? `${req.session.user.role}-${req.session.user.id}`
-    : `citizen-${caseRow.national_id}`;
+    : `citizen-${caseRow.case_number || caseRow.national_id}`;
   const token = RtcTokenBuilder.buildTokenWithUserAccount(
     AGORA_APP_ID,
     AGORA_APP_CERTIFICATE,

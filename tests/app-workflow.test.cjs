@@ -534,7 +534,7 @@ test('admin preapproval and account creation survive refresh, show failures inli
   const create = h.$('#createCaseForm'), user = h.$('#createUserForm');
   assert.ok(create); assert.ok(user);
   create.elements.namedItem('citizenName').value = '預先開通';
-  create.elements.namedItem('nationalId').value = 'TEST123';
+  create.elements.namedItem('caseNumber').value = 'TEST123';
   h.route = (url, init, fallback) => {
     if (url === '/api/cases' && init.method === 'POST') { h.cases = [caseItem('new')]; return { case: h.cases[0] }; }
     if (url === '/api/users' && init.method === 'POST') throw new Error('offline');
