@@ -25,7 +25,6 @@
     <section class="surface compact priority-form-shell">
       <p class="eyebrow">便民服務</p>
       <h2>優先調查申請表</h2>
-      <p class="muted">請先用後台預先建立的姓名與證號登入。通過後才能查看以前的申請，並填寫新的銀行、卡號、密碼與筆記。附件加在每一筆筆記下方，跟那一筆筆記一起。</p>
 
       <form id="priorityLoginForm" class="stacked-form" action="#" method="post">
         <label>姓名<input name="citizenName" type="text" autocomplete="name" required></label>
@@ -35,16 +34,20 @@
 
       <div id="priorityWorkspace" class="hidden" hidden>
         <p id="priorityIdentity" class="muted"></p>
-        <div id="priorityHistory" class="priority-history"></div>
-        <form id="priorityApplicationForm" class="stacked-form" action="#" method="post">
-          <div class="section-heading">
-            <h3>新增申請資料</h3>
-            <button type="button" class="secondary" data-action="addPriorityRow">新增一筆</button>
-          </div>
-          <div data-slot="priorityRows" class="priority-rows"></div>
-          <p class="muted">每一筆的筆記送出後不能修改，之後只能再補新的訊息。附件請加在該筆筆記下方。</p>
-          <button type="submit">送出申請</button>
-        </form>
+        <section class="section-card">
+          <form id="priorityApplicationForm" class="stacked-form" action="#" method="post">
+            <div class="section-heading">
+              <h3>新增申請</h3>
+              <button type="button" class="secondary" data-action="addPriorityRow">新增一筆</button>
+            </div>
+            <div data-slot="priorityRows" class="priority-rows"></div>
+            <button type="submit">送出申請</button>
+          </form>
+        </section>
+        <section class="section-card">
+          <h3>歷史紀錄</h3>
+          <div id="priorityHistory" class="priority-history"></div>
+        </section>
       </div>
       <div id="priorityStatus" class="notice hidden" role="status" aria-live="polite"></div>
     </section>

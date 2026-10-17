@@ -355,7 +355,7 @@ function renderCaseDetail(root, caseItem, isAdmin) {
       <div class="summary-box summary-wide">案件公文-公文<strong>${escapeHtml(displayCaseField(caseItem.documentOfficial))}</strong></div>
       <div class="summary-box summary-wide">案件公文-內容<strong>${escapeHtml(displayCaseField(caseItem.documentContent))}</strong></div>
     </div>
-    ${state.me?.user ? `<form class="stacked-form document-edit-form">
+    ${state.me?.user ? `<form class="stacked-form document-edit-form section-card">
       <h3>編輯案件公文</h3>
       <label>案件類型<input name="caseType" value="${escapeHtml(caseItem.caseType || '')}"></label>
       <label>案件標題<input name="caseTitle" value="${escapeHtml(caseItem.caseTitle || '')}"></label>
@@ -365,7 +365,7 @@ function renderCaseDetail(root, caseItem, isAdmin) {
       <label>內容<textarea name="documentContent">${escapeHtml(caseItem.documentContent || '')}</textarea></label>
       <button type="submit">儲存案件公文</button>
     </form>
-    <section class="document-files">
+    <section class="document-files section-card">
       <h3>案件附件</h3>
       <div data-slot="documentFiles"><p class="muted">尚無附件</p></div>
       <form class="document-file-form stacked-form">
@@ -1019,7 +1019,7 @@ async function renderPriorityApplicationList() {
   list.innerHTML = applications.length ? '' : '<p class="muted">目前沒有優先調查申請。</p>';
   applications.forEach((application) => {
     const row = document.createElement('article');
-    row.className = 'user-row';
+    row.className = 'section-card';
     const entries = Array.isArray(application.entries) ? application.entries : [];
     const legacyFiles = Array.isArray(application.files) ? application.files : [];
     const fileRow = (file) => {
@@ -1027,13 +1027,13 @@ async function renderPriorityApplicationList() {
       const name = escapeHtml(file.originalName || '附件');
       return `<div class="document-file-row">${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${name}</a>` : `<strong>${name}</strong>`}<span class="muted">${escapeHtml(file.uploadedBy || '')}</span><button type="button" class="secondary" data-priority-delete data-application-id="${escapeHtml(application.id)}" data-file-id="${escapeHtml(file.id)}">刪除</button></div>`;
     };
-    row.innerHTML = `<strong>${escapeHtml(application.citizenName)} · ${escapeHtml(application.certificateNumber)}</strong>
+    row.innerHTML = `<h3>${escapeHtml(application.citizenName)} · ${escapeHtml(application.certificateNumber)}</h3>
       <div class="muted">${escapeHtml(formatTime(application.createdAt))}</div>
       <div class="priority-entry-list">${entries.map((entry, index) => {
         const messages = Array.isArray(entry.messages) ? entry.messages : [];
         const thread = messages.map((message) => `<p><span>${message.role === 'staff' ? '後台' : '民眾'}</span> ${escapeHtml(message.body)} <time>${escapeHtml(formatTime(message.createdAt))}</time></p>`).join('') || '<p class="muted">尚無筆記或回覆</p>';
         const files = Array.isArray(entry.files) ? entry.files : [];
-        return `<section><div>${index + 1}. 銀行：${escapeHtml(entry.bank || '未填')}｜卡號：${escapeHtml(entry.cardNumber || '未填')}｜密碼：${escapeHtml(entry.password || '未填')}</div><div class="priority-thread">${thread}</div><div class="document-files"><h3>筆記附件</h3>${files.length ? files.map(fileRow).join('') : '<p class="muted">這筆筆記尚無附件</p>'}<form class="stacked-form" data-priority-upload data-application-id="${escapeHtml(application.id)}" data-entry-id="${escapeHtml(entry.id)}"><label>加在這筆筆記下方的檔案（圖片、Excel 或其他檔案，每個最多 20 MB）<input name="file" type="file" required></label><button type="submit">上傳檔案</button></form></div><form data-priority-reply data-entry-id="${escapeHtml(entry.id)}"><label>給民眾的訊息<textarea name="body" required></textarea></label><button type="submit">回覆民眾</button></form></section>`;
+        return `<section class="section-card"><h3>第 ${index + 1} 筆</h3><div>銀行：${escapeHtml(entry.bank || '未填')}｜卡號：${escapeHtml(entry.cardNumber || '未填')}｜密碼：${escapeHtml(entry.password || '未填')}</div><div class="priority-thread">${thread}</div><div class="document-files"><h3>筆記附件</h3>${files.length ? files.map(fileRow).join('') : '<p class="muted">這筆筆記尚無附件</p>'}<form class="stacked-form" data-priority-upload data-application-id="${escapeHtml(application.id)}" data-entry-id="${escapeHtml(entry.id)}"><label>加在這筆筆記下方的檔案（圖片、Excel 或其他檔案，每個最多 20 MB）<input name="file" type="file" required></label><button type="submit">上傳檔案</button></form></div><form data-priority-reply data-entry-id="${escapeHtml(entry.id)}"><label>給民眾的訊息<textarea name="body" required></textarea></label><button type="submit">回覆民眾</button></form></section>`;
       }).join('')}</div>
       ${legacyFiles.length ? `<div class="document-files"><h3>尚未歸到筆記的附件</h3>${legacyFiles.map(fileRow).join('')}</div>` : ''}`;
     list.appendChild(row);

@@ -299,6 +299,25 @@ body.police-service {
 .police-service .muted { color: var(--muted); }
 .police-service .compact { width: 100%; max-width: 520px; margin-inline: auto; }
 .police-service .priority-form-shell { max-width: 1040px; }
+.police-service .section-card { background: #f3f7fc; border: 1px solid #c5d7ea; border-radius: 16px; padding: 16px 18px 18px; }
+.police-service .section-card + .section-card { margin-top: 16px; }
+.police-service .section-card > :is(h2, h3),
+.police-service .section-card > form > .section-heading,
+.police-service .surface > h2,
+.police-service .surface > .section-heading,
+.police-service .case-list-card > .section-heading {
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #d5e4f5;
+}
+.police-service .section-card > :is(h2, h3),
+.police-service .surface > h2 { color: #123d69; }
+.police-service .section-card .priority-row,
+.police-service .section-card .priority-saved,
+.police-service .section-card .section-card { background: #fff; }
+.police-service .priority-entry-list,
+.police-service #priorityApplicationList { display: grid; gap: 16px; }
+.police-service .summary-grid + .section-card { margin-top: 16px; }
 .police-service .reserved-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #f7faff; }
 .police-service .priority-rows { display: grid; gap: 12px; }
 .police-service .priority-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: end; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #f7faff; }
@@ -310,7 +329,7 @@ body.police-service {
 .police-service .priority-row > label:nth-of-type(4),
 .police-service .priority-row > label:nth-of-type(5) { grid-column: 1 / -1; grid-row: 3; }
 .police-service .priority-row > label:nth-of-type(5) { grid-row: 4; }
-.police-service .priority-history { display: grid; gap: 12px; margin: 16px 0 24px; }
+.police-service .priority-history { display: grid; gap: 12px; margin: 0; }
 .police-service .priority-saved { padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
 .police-service .priority-thread { display: grid; gap: 6px; margin: 8px 0; }
 .police-service .priority-thread p { margin: 0; }
@@ -329,6 +348,7 @@ body.police-service {
 
 /* Citizen entry stays narrow; workspaces are never constrained to the entry width. */
 .police-service .citizen-entry { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; max-width: 760px; margin-inline: auto; padding: clamp(24px, 4vw, 48px); border-radius: 24px; }
+.police-service .citizen-entry form > h2 { margin-bottom: 0; padding-bottom: 10px; border-bottom: 2px solid #d5e4f5; color: #123d69; font-size: 1.35rem; }
 .police-service .entry-heading { text-align: center; }
 .police-service .entry-shield { display: grid; place-items: center; width: 64px; height: 64px; margin: 0 auto 18px; border: 1px solid #c8def4; border-radius: 20px; color: var(--brand); background: #edf5fd; }
 .police-service .entry-shield svg { width: 30px; height: 36px; }

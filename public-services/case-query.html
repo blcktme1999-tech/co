@@ -25,7 +25,7 @@
  
  <style>.header.fixed{margin-top:0!important;background:#fff!important;box-shadow:none!important}.header.fixed .navigation li a{color:#333!important}.header:after{display:block!important;height:3em!important;background:#2a476f!important}.header .menu{display:block!important;min-height:3em;background:#2a476f}#center.main.innerpage{margin-top:159px!important}</style>
 <style>
-.case-query-section{padding:0 0 30px}.case-query-form{border:1px solid #ddd;background:#fff;padding:24px;margin:0 0 18px}.case-query-help{margin:0 0 18px;color:#555}.case-query-fields{display:grid;grid-template-columns:160px minmax(0,1fr);gap:12px 16px;align-items:center;max-width:720px}.case-query-fields label{font-weight:bold;color:#333}.case-query-fields input{box-sizing:border-box;width:100%;padding:10px;border:1px solid #bbb;border-radius:3px;font-size:1em}.case-query-submit{margin-top:18px;padding:10px 24px;border:0;border-radius:3px;background:#0071bc;color:#fff;font-size:1em;cursor:pointer}.case-query-submit:disabled{opacity:.65;cursor:not-allowed}.case-query-status{margin:12px 0;color:#555}.case-query-status.error{color:#b00020}.case-query-table{width:100%;border-collapse:collapse;margin-top:12px;background:#fff}.case-query-table th,.case-query-table td{border:1px solid #ddd;padding:10px;text-align:left}.case-query-table th{background:#f5f5f5;color:#333}.case-query-empty{padding:18px;border:1px solid #ddd;background:#fff;color:#555}@media (max-width:640px){.case-query-fields{grid-template-columns:1fr}.case-query-form{padding:18px}}
+.case-query-section{padding:0 0 30px}.case-query-card{background:#f7fafc;border:1px solid #d5e3f2;border-radius:12px;padding:20px 22px;margin:0 0 18px}.case-query-card>h3{margin:0 0 14px;padding-bottom:8px;border-bottom:2px solid #d5e4f5;color:#0c3969;font-size:1.15rem}.case-query-form{border:0;background:transparent;padding:0;margin:0}.case-query-help{margin:0 0 18px;color:#555}.case-query-fields{display:grid;grid-template-columns:160px minmax(0,1fr);gap:12px 16px;align-items:center;max-width:720px}.case-query-fields label{font-weight:bold;color:#333}.case-query-fields input{box-sizing:border-box;width:100%;padding:10px;border:1px solid #bbb;border-radius:3px;font-size:1em}.case-query-submit{margin-top:18px;padding:10px 24px;border:0;border-radius:3px;background:#0071bc;color:#fff;font-size:1em;cursor:pointer}.case-query-submit:disabled{opacity:.65;cursor:not-allowed}.case-query-status{margin:12px 0;color:#555}.case-query-status.error{color:#b00020}.case-query-table{width:100%;border-collapse:collapse;margin-top:12px;background:#fff}.case-query-table th,.case-query-table td{border:1px solid #ddd;padding:10px;text-align:left}.case-query-table th{background:#f5f5f5;color:#333}.case-query-empty{padding:18px;border:1px solid #ddd;background:#fff;color:#555}@media (max-width:640px){.case-query-fields{grid-template-columns:1fr}.case-query-form{padding:18px}}
 </style>
 <style id="ey-chrome">
 .ey-topbar{background:#fff;border-bottom:1px solid #d9d9d9;font-family:"Microsoft JhengHei","PingFang TC",sans-serif}
@@ -50,7 +50,7 @@
    <ul class="ey-links">
     <li><a href="/" title="回首頁">回首頁</a></li>
     <li><a href="/sitemap/" title="網站導覽">網站導覽</a></li>
-   </ul>
+ </ul>
   </nav>
  </div>
 </header><div id=center class="main innerpage" style=margin-top:0>
@@ -79,6 +79,8 @@
  </ul>
  </div>
  </div><section class="np case-query-section">
+ <section class="case-query-card">
+ <h3>查詢</h3>
  <form id="caseQueryForm" class="case-query-form" aria-describedby="caseQueryHelp">
   <p id="caseQueryHelp" class="case-query-help">請輸入姓名與證號；兩者完全相符後可查看該證號底下所有案件公文。</p>
   <div class="case-query-fields">
@@ -89,8 +91,12 @@
   </div>
   <button type="submit" class="case-query-submit">案件公文查詢</button>
  </form>
+ </section>
+ <section class="case-query-card">
+ <h3>查詢結果</h3>
  <div id="caseQueryStatus" class="case-query-status" role="status" aria-live="polite"></div>
  <div id="caseQueryResults" class="case-query-results" aria-live="polite"></div>
+ </section>
 </section></div>
  </div>
  </div><footer class="ey-bottom">
