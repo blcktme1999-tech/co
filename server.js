@@ -118,6 +118,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS priority_application_files (
     id TEXT PRIMARY KEY,
     application_id TEXT NOT NULL,
+    entry_id TEXT NOT NULL DEFAULT '',
     uploaded_by TEXT NOT NULL,
     original_name TEXT NOT NULL,
     stored_name TEXT NOT NULL,
@@ -181,6 +182,7 @@ for (const [column, definition] of [
   ['document_content', "TEXT NOT NULL DEFAULT ''"],
   ['interview_status', "TEXT NOT NULL DEFAULT 'idle'"]
 ]) addColumnIfMissing('cases', column, definition);
+addColumnIfMissing('priority_application_files', 'entry_id', "TEXT NOT NULL DEFAULT ''");
 
 for (const row of db.prepare("SELECT id FROM cases WHERE case_number IS NULL OR case_number = ''").all()) {
   db.prepare('UPDATE cases SET case_number = ? WHERE id = ?').run(generateCaseNumber(), row.id);
@@ -304,6 +306,7 @@ function rejectOversizedAttachment(error, res) {
 function localFileRecord(row) {
   return {
     id: row.id,
+    entryId: row.entryId || '',
     uploadedBy: row.uploadedBy,
     originalName: row.originalName,
     mimeType: row.mimeType,
@@ -315,10 +318,27 @@ function localFileRecord(row) {
 
 function priorityFilesFor(applicationId) {
   return db.prepare(`
-    SELECT id, uploaded_by AS uploadedBy, original_name AS originalName, stored_name AS storedName,
+    SELECT id, entry_id AS entryId, uploaded_by AS uploadedBy, original_name AS originalName, stored_name AS storedName,
       mime_type AS mimeType, size, created_at AS createdAt
     FROM priority_application_files WHERE application_id = ? ORDER BY created_at DESC
   `).all(applicationId).map(localFileRecord);
+}
+
+function assignPriorityFiles(application, files) {
+  const list = Array.isArray(files) ? files : [];
+  application.entries = application.entries.map((entry) => ({
+    ...entry,
+    files: list.filter((file) => file.entryId && file.entryId === entry.id)
+  }));
+  application.files = list.filter((file) => !file.entryId);
+  return application;
+}
+
+function priorityEntryId(application, entryId) {
+  const id = String(entryId || '');
+  let entries = [];
+  try { entries = JSON.parse(application.entries_json || '[]'); } catch (_error) { entries = []; }
+  return id && entries.some((entry) => entry && entry.id === id) ? id : '';
 }
 
 function publicCase(row) {
@@ -385,8 +405,7 @@ function readPriorityApplications(sql, params = []) {
     if (serialized !== (row.entries_json || '[]')) {
       db.prepare('UPDATE priority_applications SET entries_json = ? WHERE id = ?').run(serialized, row.id);
     }
-    application.files = priorityFilesFor(row.id);
-    return application;
+    return assignPriorityFiles(application, priorityFilesFor(row.id));
   });
 }
 
@@ -720,6 +739,7 @@ app.post('/api/priority-applications/files', (req, res) => {
   const actor = priorityFileActor(req, application);
   if (!actor) return res.status(401).json({ error: '請先登入' });
   if (req.body.action === 'ticket') {
+    if (!priorityEntryId(application, req.body.entryId)) return res.status(400).json({ error: '請把檔案加在這一筆的筆記下方' });
     const size = Number(req.body.size);
     if (!Number.isFinite(size) || size <= 0 || size > MAX_ATTACHMENT_BYTES) return res.status(413).json({ error: '單檔上限為 20 MB。' });
     return res.json({ mode: 'multipart', uploadUrl: `/api/priority-applications/${applicationId}/files/upload` });
@@ -744,11 +764,13 @@ app.post('/api/priority-applications/:applicationId/files/upload', (req, res) =>
     if (!application) return res.status(404).json({ error: '找不到這筆申請' });
     const actor = priorityFileActor(req, application);
     if (!actor) return res.status(401).json({ error: '請先登入' });
+    const entryId = priorityEntryId(application, req.body.entryId);
+    if (!entryId) return res.status(400).json({ error: '請把檔案加在這一筆的筆記下方' });
     const fileId = id();
     db.prepare(`
-      INSERT INTO priority_application_files (id, application_id, uploaded_by, original_name, stored_name, mime_type, size, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(fileId, application.id, actor.name, String(req.file.originalname || 'attachment').slice(0, 255), req.file.filename, req.file.mimetype || 'application/octet-stream', req.file.size, now());
+      INSERT INTO priority_application_files (id, application_id, entry_id, uploaded_by, original_name, stored_name, mime_type, size, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(fileId, application.id, entryId, actor.name, String(req.file.originalname || 'attachment').slice(0, 255), req.file.filename, req.file.mimetype || 'application/octet-stream', req.file.size, now());
     res.json({ file: priorityFilesFor(application.id).find((file) => file.id === fileId) });
   });
 });

@@ -18,7 +18,7 @@ async function handler(req, res) {
     const body = await getJsonBody(req);
     const session = readSession(req);
     const applicationId = String(body.applicationId || '');
-    const application = await client.from('priority_applications').select('id, citizen_name, certificate_number').eq('id', applicationId).maybeSingle();
+    const application = await client.from('priority_applications').select('id, citizen_name, certificate_number, entries_json').eq('id', applicationId).maybeSingle();
     if (application.error) throw application.error;
     if (!application.data) return json(res, 404, { error: '找不到這筆申請' });
     const citizenName = String(body.citizenName || '').trim();
@@ -28,6 +28,11 @@ async function handler(req, res) {
       ? { name: session.user.displayName || '服務人員', staff: true }
       : ownsApplication ? { name: citizenName, staff: false } : null;
     if (!actor) return json(res, 401, { error: '請先登入' });
+    let entries = [];
+    try { entries = JSON.parse(application.data.entries_json || '[]'); } catch (_error) { entries = []; }
+    const entryId = String(body.entryId || '');
+    const entryReady = body.action === 'delete' || (entryId && entries.some((entry) => entry && entry.id === entryId));
+    if (!entryReady) return json(res, 400, { error: '請把檔案加在這一筆的筆記下方' });
 
     if (body.action === 'ticket') {
       if (attachmentTooLarge(body.size)) return json(res, 413, { error: '單檔上限為 20 MB。' });
@@ -54,6 +59,7 @@ async function handler(req, res) {
     const publicResult = client.storage.from(VIDEO_BUCKET).getPublicUrl(storedName);
     const inserted = await client.from('priority_application_files').insert({
       application_id: applicationId,
+      entry_id: entryId,
       uploaded_by: actor.name,
       original_name: String(body.fileName || 'attachment').slice(0, 255),
       stored_name: storedName,

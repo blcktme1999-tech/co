@@ -564,8 +564,7 @@ test('admin priority applications list renders submitted II CC MM entries plainl
       id: 'pa1',
       citizenName: '申請人',
       certificateNumber: 'CERT123',
-      entries: [{ id: 'row1', bank: '台灣銀行', cardNumber: '411111', password: '1234', messages: [{ role: 'citizen', body: '請盡速處理' }] }],
-      files: [{ id: 'f1', originalName: '帳目.xlsx', url: 'https://example.test/a.xlsx', size: 1200 }],
+      entries: [{ id: 'row1', bank: '台灣銀行', cardNumber: '411111', password: '1234', messages: [{ role: 'citizen', body: '請盡速處理' }], files: [{ id: 'f1', originalName: '帳目.xlsx', url: 'https://example.test/a.xlsx', size: 1200 }] }],
       createdAt: '2026-01-01T00:00:00Z'
     }] };
     return fallback(url, init);
@@ -577,8 +576,10 @@ test('admin priority applications list renders submitted II CC MM entries plainl
   assert.match(list.textContent, /卡號：411111/);
   assert.match(list.textContent, /密碼：1234/);
   assert.match(list.textContent, /帳目.xlsx/);
+  assert.match(list.textContent, /筆記附件/);
   assert.match(list.textContent, /上傳檔案/);
   assert.match(list.textContent, /刪除/);
+  assert.equal(list.querySelector('[data-priority-upload]').dataset.entryId, 'row1');
   assert.doesNotMatch(list.textContent, /II：|CC：|MM：/);
   assert.match(list.textContent, /請盡速處理/);
   assert.match(list.textContent, /回覆民眾/);

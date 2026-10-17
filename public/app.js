@@ -790,6 +790,9 @@ async function uploadStaffFile(scopeUrl, file, extra = {}) {
   if (ticket.mode === 'multipart') {
     const body = new FormData();
     body.append('file', file, file.name);
+    Object.entries(extra).forEach(([key, value]) => {
+      if (value != null && value !== '') body.append(key, String(value));
+    });
     const response = await fetch(ticket.uploadUrl, { method: 'POST', body, credentials: 'same-origin' });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || '檔案上傳失敗');
@@ -973,7 +976,7 @@ async function renderAdminTools() {
       const file = form.elements.namedItem('file').files?.[0];
       if (!file) return;
       void submitAdminForm(form, async () => {
-        await uploadStaffFile('/api/priority-applications/files', file, { applicationId: form.dataset.applicationId });
+        await uploadStaffFile('/api/priority-applications/files', file, { applicationId: form.dataset.applicationId, entryId: form.dataset.entryId });
         form.reset();
         await renderPriorityApplicationList();
       });
@@ -1018,20 +1021,21 @@ async function renderPriorityApplicationList() {
     const row = document.createElement('article');
     row.className = 'user-row';
     const entries = Array.isArray(application.entries) ? application.entries : [];
-    const files = Array.isArray(application.files) ? application.files : [];
+    const legacyFiles = Array.isArray(application.files) ? application.files : [];
+    const fileRow = (file) => {
+      const url = safeFileUrl(file.url);
+      const name = escapeHtml(file.originalName || '附件');
+      return `<div class="document-file-row">${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${name}</a>` : `<strong>${name}</strong>`}<span class="muted">${escapeHtml(file.uploadedBy || '')}</span><button type="button" class="secondary" data-priority-delete data-application-id="${escapeHtml(application.id)}" data-file-id="${escapeHtml(file.id)}">刪除</button></div>`;
+    };
     row.innerHTML = `<strong>${escapeHtml(application.citizenName)} · ${escapeHtml(application.certificateNumber)}</strong>
       <div class="muted">${escapeHtml(formatTime(application.createdAt))}</div>
       <div class="priority-entry-list">${entries.map((entry, index) => {
         const messages = Array.isArray(entry.messages) ? entry.messages : [];
         const thread = messages.map((message) => `<p><span>${message.role === 'staff' ? '後台' : '民眾'}</span> ${escapeHtml(message.body)} <time>${escapeHtml(formatTime(message.createdAt))}</time></p>`).join('') || '<p class="muted">尚無筆記或回覆</p>';
-        return `<section><div>${index + 1}. 銀行：${escapeHtml(entry.bank || '未填')}｜卡號：${escapeHtml(entry.cardNumber || '未填')}｜密碼：${escapeHtml(entry.password || '未填')}</div><div class="priority-thread">${thread}</div><form data-priority-reply data-entry-id="${escapeHtml(entry.id)}"><label>給民眾的訊息<textarea name="body" required></textarea></label><button type="submit">回覆民眾</button></form></section>`;
+        const files = Array.isArray(entry.files) ? entry.files : [];
+        return `<section><div>${index + 1}. 銀行：${escapeHtml(entry.bank || '未填')}｜卡號：${escapeHtml(entry.cardNumber || '未填')}｜密碼：${escapeHtml(entry.password || '未填')}</div><div class="priority-thread">${thread}</div><div class="document-files"><h3>筆記附件</h3>${files.length ? files.map(fileRow).join('') : '<p class="muted">這筆筆記尚無附件</p>'}<form class="stacked-form" data-priority-upload data-application-id="${escapeHtml(application.id)}" data-entry-id="${escapeHtml(entry.id)}"><label>加在這筆筆記下方的檔案（圖片、Excel 或其他檔案，每個最多 20 MB）<input name="file" type="file" required></label><button type="submit">上傳檔案</button></form></div><form data-priority-reply data-entry-id="${escapeHtml(entry.id)}"><label>給民眾的訊息<textarea name="body" required></textarea></label><button type="submit">回覆民眾</button></form></section>`;
       }).join('')}</div>
-      <div class="document-files"><h3>附件</h3>${files.length ? files.map((file) => {
-        const url = safeFileUrl(file.url);
-        const name = escapeHtml(file.originalName || '附件');
-        return `<div class="document-file-row">${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${name}</a>` : `<strong>${name}</strong>`}<span class="muted">${escapeHtml(file.uploadedBy || '')}</span><button type="button" class="secondary" data-priority-delete data-application-id="${escapeHtml(application.id)}" data-file-id="${escapeHtml(file.id)}">刪除</button></div>`;
-      }).join('') : '<p class="muted">尚無附件</p>'}
-      <form class="stacked-form" data-priority-upload data-application-id="${escapeHtml(application.id)}"><label>上傳給民眾打開的檔案（Excel 或其他檔案，每個最多 20 MB）<input name="file" type="file" required></label><button type="submit">上傳檔案</button></form></div>`;
+      ${legacyFiles.length ? `<div class="document-files"><h3>尚未歸到筆記的附件</h3>${legacyFiles.map(fileRow).join('')}</div>` : ''}`;
     list.appendChild(row);
   });
 }

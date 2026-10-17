@@ -87,6 +87,7 @@ create index if not exists priority_applications_created_at_idx on public.priori
 create table if not exists public.priority_application_files (
   id uuid primary key default gen_random_uuid(),
   application_id uuid not null references public.priority_applications(id) on delete cascade,
+  entry_id text not null default '',
   uploaded_by text not null,
   original_name text not null,
   stored_name text not null,
@@ -96,7 +97,10 @@ create table if not exists public.priority_application_files (
   created_at timestamptz not null default now()
 );
 
+alter table public.priority_application_files add column if not exists entry_id text not null default '';
+
 create index if not exists priority_application_files_application_idx on public.priority_application_files(application_id, created_at desc);
+create index if not exists priority_application_files_entry_idx on public.priority_application_files(application_id, entry_id, created_at desc);
 
 alter table public.service_users enable row level security;
 alter table public.service_cases enable row level security;

@@ -181,7 +181,20 @@ function publicFile(row) {
     size: row.size,
     kind: row.kind,
     createdAt: row.created_at,
-    url: row.public_url
+    url: row.public_url,
+    entryId: row.entry_id || ''
+  };
+}
+
+function assignPriorityFiles(application, files) {
+  const list = Array.isArray(files) ? files : [];
+  return {
+    ...application,
+    entries: application.entries.map((entry) => ({
+      ...entry,
+      files: list.filter((file) => file.entryId && file.entryId === entry.id)
+    })),
+    files: list.filter((file) => !file.entryId)
   };
 }
 
@@ -292,7 +305,7 @@ async function attachPriorityFiles(client, applications) {
     list.push(publicFile(row));
     grouped.set(row.application_id, list);
   }
-  return withEmpty.map((item) => ({ ...item, files: grouped.get(item.id) || [] }));
+  return withEmpty.map((item) => assignPriorityFiles(item, grouped.get(item.id) || []));
 }
 
 function publicPriorityApplication(row) {
