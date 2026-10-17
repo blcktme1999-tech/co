@@ -629,12 +629,10 @@ function validConversation(context) {
 
 function renderConversation(root, caseItem) {
   root.innerHTML = `<div class="section-heading"><h2>後端客服聊天室</h2></div>
-    <div class="chat-log" role="log" aria-label="案件訊息與附件" aria-live="polite" style="overflow-anchor:none"></div>
+    <div class="chat-log" role="log" aria-label="案件訊息" aria-live="polite" style="overflow-anchor:none"></div>
     <div data-slot="conversationPollError" class="notice error" role="status" hidden></div>
-    <form class="message-form"><textarea name="body" placeholder="輸入訊息" aria-label="訊息" required></textarea><button type="submit">送出</button></form>
-    <form class="upload-form stacked-form"><label>上傳檔案（圖片、Excel 或其他附件，每個檔案最多 3 MiB）<input name="file" type="file" required></label><button type="submit">上傳檔案</button></form>
-    <p data-slot="uploadStatus" class="muted"></p>`;
-  const context = { caseId: caseItem.id, version: state.viewVersion, root, events: new Map(), nodes: new Map(), polling: null, sending: false, uploading: false };
+    <form class="message-form"><textarea name="body" placeholder="輸入訊息" aria-label="訊息" required></textarea><button type="submit">送出</button></form>`;
+  const context = { caseId: caseItem.id, version: state.viewVersion, root, events: new Map(), nodes: new Map(), polling: null, sending: false };
   state.conversation = context;
   $('.message-form', root).addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -652,22 +650,6 @@ function renderConversation(root, caseItem) {
     } catch (error) { if (validConversation(context)) reportActionError(error, form); }
     finally { context.sending = false; updateConversationControls(context); }
   });
-  $('.upload-form', root).addEventListener('submit', async (event) => {
-    event.preventDefault();
-    if (!validConversation(context) || context.uploading || state.currentCase.status === 'closed') return;
-    const form = event.currentTarget;
-    const input = form.elements.namedItem('file');
-    const file = input.files[0];
-    if (!file) return;
-    context.uploading = true;
-    updateConversationControls(context);
-    inlineNotice(form, '');
-    try {
-      await uploadVideo(caseItem.id, file, file.name, 'upload', context);
-      if (validConversation(context) && input.files[0] === file) form.reset();
-    } catch (error) { if (validConversation(context)) reportActionError(error, form); }
-    finally { context.uploading = false; updateConversationControls(context); }
-  });
   updateConversationControls(context);
   startMessagePolling(caseItem.id);
   void refreshMessages(caseItem.id);
@@ -675,15 +657,8 @@ function renderConversation(root, caseItem) {
 
 function updateConversationControls(context) {
   if (!validConversation(context)) return;
-  const open = state.currentCase.status !== 'closed';
   const submit = $('.message-form button[type="submit"]', context.root);
   if (submit) { submit.disabled = context.sending; submit.textContent = context.sending ? '傳送中…' : '送出'; }
-  const upload = $('.upload-form button[type="submit"]', context.root);
-  if (upload) { upload.disabled = context.uploading || !open; upload.textContent = context.uploading ? '上傳中…' : '上傳檔案'; }
-  const input = $('.upload-form input', context.root);
-  if (input) input.disabled = context.uploading || !open;
-  const status = $('[data-slot="uploadStatus"]', context.root);
-  if (status) status.textContent = open ? '圖片、Excel 與其他附件會與訊息依時間排列；單檔上限 3 MiB（配合平台請求限制）。' : '案件已結案，無法上傳附件；訊息仍可查看。';
 }
 
 function eventKey(kind, item) { return `${kind}:${item.id}`; }
@@ -769,22 +744,16 @@ function refreshMessages(caseId) {
   const context = state.conversation;
   if (!validConversation(context) || context.caseId !== caseId) return Promise.resolve();
   if (context.polling) return context.polling;
-  const includeFiles = state.currentCase.status !== 'closed';
   const request = async () => {
-    const results = await Promise.allSettled([
-      api(casePath(caseId, '/messages')),
-      includeFiles ? api(casePath(caseId, '/files')) : Promise.resolve({ files: [] })
-    ]);
-    if (!validConversation(context)) return;
-    const errors = [];
-    const arrays = results.map((result, index) => {
-      if (result.status === 'rejected') { errors.push(errorText(result.reason)); return []; }
-      const items = result.value[index === 0 ? 'messages' : 'files'];
-      if (!Array.isArray(items)) { errors.push('訊息或附件回應格式錯誤。'); return []; }
-      return items;
-    });
-    mergeConversation(context, arrays[0], arrays[1]);
-    inlineNotice(context.root, [...new Set(errors)].join('；'), 'conversationPollError');
+    try {
+      const data = await api(casePath(caseId, '/messages'));
+      if (!validConversation(context)) return;
+      if (!Array.isArray(data.messages)) throw new Error('訊息回應格式錯誤。');
+      mergeConversation(context, data.messages, []);
+      inlineNotice(context.root, '', 'conversationPollError');
+    } catch (error) {
+      if (validConversation(context)) inlineNotice(context.root, errorText(error), 'conversationPollError');
+    }
   };
   context.polling = request().catch((error) => {
     if (validConversation(context)) inlineNotice(context.root, errorText(error), 'conversationPollError');
@@ -1060,7 +1029,7 @@ async function renderPriorityApplicationList() {
       <div class="document-files"><h3>附件</h3>${files.length ? files.map((file) => {
         const url = safeFileUrl(file.url);
         const name = escapeHtml(file.originalName || '附件');
-        return `<div class="document-file-row">${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${name}</a>` : `<strong>${name}</strong>`}<button type="button" class="secondary" data-priority-delete data-application-id="${escapeHtml(application.id)}" data-file-id="${escapeHtml(file.id)}">刪除</button></div>`;
+        return `<div class="document-file-row">${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${name}</a>` : `<strong>${name}</strong>`}<span class="muted">${escapeHtml(file.uploadedBy || '')}</span><button type="button" class="secondary" data-priority-delete data-application-id="${escapeHtml(application.id)}" data-file-id="${escapeHtml(file.id)}">刪除</button></div>`;
       }).join('') : '<p class="muted">尚無附件</p>'}
       <form class="stacked-form" data-priority-upload data-application-id="${escapeHtml(application.id)}"><label>上傳給民眾打開的檔案（Excel 或其他檔案，每個最多 20 MB）<input name="file" type="file" required></label><button type="submit">上傳檔案</button></form></div>`;
     list.appendChild(row);

@@ -703,16 +703,29 @@ app.post('/api/cases/:caseId/files/upload', requireStaff, (req, res) => {
   });
 });
 
-app.post('/api/priority-applications/files', requireStaff, (req, res) => {
+function priorityFileActor(req, application) {
+  if (req.session.user) return { name: req.session.user.displayName || '服務人員', staff: true };
+  const citizenName = String(req.body.citizenName || '').trim();
+  const certificateNumber = normalizeCertificateNumber(req.body.certificateNumber || '');
+  if (application && citizenName && certificateNumber && citizenName === application.citizen_name && certificateNumber === application.certificate_number) {
+    return { name: citizenName, staff: false };
+  }
+  return null;
+}
+
+app.post('/api/priority-applications/files', (req, res) => {
   const applicationId = String(req.body.applicationId || '');
-  const application = db.prepare('SELECT id FROM priority_applications WHERE id = ?').get(applicationId);
+  const application = db.prepare('SELECT * FROM priority_applications WHERE id = ?').get(applicationId);
   if (!application) return res.status(404).json({ error: '找不到這筆申請' });
+  const actor = priorityFileActor(req, application);
+  if (!actor) return res.status(401).json({ error: '請先登入' });
   if (req.body.action === 'ticket') {
     const size = Number(req.body.size);
     if (!Number.isFinite(size) || size <= 0 || size > MAX_ATTACHMENT_BYTES) return res.status(413).json({ error: '單檔上限為 20 MB。' });
     return res.json({ mode: 'multipart', uploadUrl: `/api/priority-applications/${applicationId}/files/upload` });
   }
   if (req.body.action === 'delete') {
+    if (!actor.staff) return res.status(403).json({ error: '需要管理員權限' });
     const file = db.prepare('SELECT * FROM priority_application_files WHERE id = ? AND application_id = ?').get(req.body.fileId, applicationId);
     if (!file) return res.status(404).json({ error: '找不到檔案' });
     const target = path.join(UPLOAD_DIR, path.basename(file.stored_name));
@@ -723,17 +736,19 @@ app.post('/api/priority-applications/files', requireStaff, (req, res) => {
   res.status(400).json({ error: '無法處理這個檔案要求' });
 });
 
-app.post('/api/priority-applications/:applicationId/files/upload', requireStaff, (req, res) => {
+app.post('/api/priority-applications/:applicationId/files/upload', (req, res) => {
   attachmentUpload(req, res, (error) => {
     if (rejectOversizedAttachment(error, res)) return;
     if (!req.file) return res.status(400).json({ error: '請選擇檔案' });
-    const application = db.prepare('SELECT id FROM priority_applications WHERE id = ?').get(req.params.applicationId);
+    const application = db.prepare('SELECT * FROM priority_applications WHERE id = ?').get(req.params.applicationId);
     if (!application) return res.status(404).json({ error: '找不到這筆申請' });
+    const actor = priorityFileActor(req, application);
+    if (!actor) return res.status(401).json({ error: '請先登入' });
     const fileId = id();
     db.prepare(`
       INSERT INTO priority_application_files (id, application_id, uploaded_by, original_name, stored_name, mime_type, size, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(fileId, application.id, req.session.user.displayName || '服務人員', String(req.file.originalname || 'attachment').slice(0, 255), req.file.filename, req.file.mimetype || 'application/octet-stream', req.file.size, now());
+    `).run(fileId, application.id, actor.name, String(req.file.originalname || 'attachment').slice(0, 255), req.file.filename, req.file.mimetype || 'application/octet-stream', req.file.size, now());
     res.json({ file: priorityFilesFor(application.id).find((file) => file.id === fileId) });
   });
 });

@@ -800,9 +800,7 @@ for (const status of ['pending', 'closed']) {
     assert.equal(h.app.state.currentCase.status, status); assert.ok(h.app.state.callRoot);
     assert.equal(h.$('#citizenWorkspace').classList.contains('hidden'), false);
     assert.equal(h.controllers.length, 0); assert.ok(h.timers.size >= 1);
-    assert.deepEqual(h.requests.map((item) => item.url), status === 'closed'
-      ? ['/api/me', '/api/cases/a/messages']
-      : ['/api/me', '/api/cases/a/messages', '/api/cases/a/files']);
+    assert.deepEqual(h.requests.map((item) => item.url), ['/api/me', '/api/cases/a/messages']);
   });
 }
 
