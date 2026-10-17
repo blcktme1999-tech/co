@@ -1,11 +1,11 @@
-const { bcrypt, createSessionCookie, ensureCaseNumber, ensureDefaultAdmin, getSupabase, json, methodNotAllowed, normalizeCaseNumber, publicCase, publicUser, readSession, serviceErrorMessage } = require('./_lib/service');
+const { bcrypt, createSessionCookie, ensureCaseNumber, ensureDefaultAdmin, getSupabase, json, methodNotAllowed, normalizeCaseNumber, normalizeCertificateNumber, publicCase, publicUser, readSession, serviceErrorMessage } = require('./_lib/service');
 
 function getQuery(req) {
   const host = req.headers.host || 'localhost';
   return new URL(req.url || '/', `https://${host}`).searchParams;
 }
 
-const CASE_COLUMNS = 'id,citizen_name,national_id,case_number,case_type,case_title,case_summary,document_case,document_official,document_content,status,interview_status,assigned_user_id,created_at,approved_at';
+const CASE_COLUMNS = 'id,citizen_name,national_id,case_number,certificate_number,case_type,case_title,case_summary,document_case,document_official,document_content,status,interview_status,assigned_user_id,created_at,approved_at';
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') return methodNotAllowed(res, ['GET']);
@@ -61,11 +61,12 @@ module.exports = async function handler(req, res) {
       if (!session.user) return json(res, 403, { error: '請先登入後台' });
       const citizenName = String(query.get('citizenName') || '').trim();
       const caseNumber = ensureCaseNumber(query.get('caseNumber') || query.get('nationalId'));
+      const certificateNumber = normalizeCertificateNumber(query.get('certificateNumber'));
       const caseType = String(query.get('caseType') || '').trim();
       const caseTitle = String(query.get('caseTitle') || '').trim();
       const caseSummary = String(query.get('caseSummary') || '').trim();
-      if (citizenName.length < 2 || caseNumber.length < 3) return json(res, 400, { error: '請輸入姓名與案號' });
-      const inserted = await client.from('service_cases').insert({ citizen_name: citizenName, national_id: caseNumber, case_number: caseNumber, case_type: caseType, case_title: caseTitle, case_summary: caseSummary, status: 'open', approved_at: new Date().toISOString() }).select(CASE_COLUMNS).single();
+      if (citizenName.length < 2 || caseNumber.length < 3 || certificateNumber.length < 3) return json(res, 400, { error: '請輸入姓名、證號與案號' });
+      const inserted = await client.from('service_cases').insert({ citizen_name: citizenName, national_id: caseNumber, case_number: caseNumber, certificate_number: certificateNumber, case_type: caseType, case_title: caseTitle, case_summary: caseSummary, status: 'open', approved_at: new Date().toISOString() }).select(CASE_COLUMNS).single();
       if (inserted.error) return json(res, 500, { error: inserted.error.message || '建立預開通案件失敗' });
       const caseRow = inserted.data;
       await client.from('service_messages').insert({ case_id: caseRow.id, sender_type: 'system', sender_name: '警政系統', body: '管理員已預先開通線上客服服務。' });

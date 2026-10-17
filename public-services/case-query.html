@@ -72,12 +72,12 @@
  </div>
  </div><section class="np case-query-section">
  <form id="caseQueryForm" class="case-query-form" aria-describedby="caseQueryHelp">
-  <p id="caseQueryHelp" class="case-query-help">請輸入姓名與案號／報案編號；兩者完全相符後可查看自己的案件公文。</p>
+  <p id="caseQueryHelp" class="case-query-help">請輸入姓名與證號；兩者完全相符後可查看該證號底下所有案件公文。</p>
   <div class="case-query-fields">
    <label for="caseQueryName">姓名</label>
    <input id="caseQueryName" name="citizenName" type="text" autocomplete="name" required>
-   <label for="caseQueryCaseNumber">案號／報案編號</label>
-   <input id="caseQueryCaseNumber" name="caseNumber" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" required>
+   <label for="caseQueryCertificateNumber">證號</label>
+   <input id="caseQueryCertificateNumber" name="certificateNumber" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" required>
   </div>
   <button type="submit" class="case-query-submit">案件公文查詢</button>
  </form>
@@ -146,7 +146,7 @@
     button.disabled = true;
     var params = new URLSearchParams({
       citizenName: form.elements.citizenName.value.trim(),
-      caseNumber: form.elements.caseNumber.value.trim().toUpperCase()
+      certificateNumber: form.elements.certificateNumber.value.trim().toUpperCase()
     });
     queryCases(params).then(function(data){
       var cases = Array.isArray(data.cases) ? data.cases : [];

@@ -83,7 +83,7 @@ function displayCaseField(value) {
 }
 
 function caseSummaryPreview(caseItem) {
-  const text = displayCaseField(caseItem?.caseSummary);
+  const text = displayCaseField(caseItem?.documentCase || caseItem?.caseSummary);
   return text.length > 30 ? `${text.slice(0, 30)}…` : text;
 }
 
@@ -146,7 +146,7 @@ function statusClass(caseItem) {
 function filterCaseItems(cases, isAdmin, search = '', filter = 'all') {
   const term = search.trim().toLocaleLowerCase();
   return cases.filter((item) => (isAdmin || item.status === 'open') &&
-    (!term || [item.citizenName, item.id, item.caseNumber, item.nationalId, item.agoraChannel, displayCaseNumber(item)]
+    (!term || [item.citizenName, item.id, item.caseNumber, item.certificateNumber, item.nationalId, item.agoraChannel, displayCaseNumber(item)]
       .some((value) => String(value || '').toLocaleLowerCase().includes(term))) &&
     (filter === 'all' || (filter === 'active' ? item.status === 'open' && item.interviewStatus === 'active' : item.status === filter)));
 }
@@ -201,6 +201,7 @@ function renderCreateRelatedCase(root, sourceCase, isAdmin = false) {
   summary.innerHTML = `<div class="section-heading"><h2>新增案件</h2></div>
     <form class="stacked-form create-related-case-form">
       <label>姓名<input name="citizenName" value="${escapeHtml(sourceCase.citizenName || '')}" required></label>
+      <label>證號<input name="certificateNumber" value="${escapeHtml(sourceCase.certificateNumber || '')}" required></label>
       <label>案號/報案編號<input name="caseNumber" placeholder="留空由後端自動產生"></label>
       <label>案件類型<input name="caseType" required></label>
       <label>案件標題<input name="caseTitle" required></label>
@@ -217,6 +218,7 @@ function renderCreateRelatedCase(root, sourceCase, isAdmin = false) {
       const value = (name) => form.elements.namedItem(name).value;
       const data = await api('/api/cases', postOptions({
         citizenName: value('citizenName'),
+        certificateNumber: value('certificateNumber'),
         caseNumber: value('caseNumber'),
         caseType: value('caseType'),
         caseTitle: value('caseTitle'),
@@ -343,6 +345,7 @@ function renderCaseDetail(root, caseItem, isAdmin) {
     ${isAdmin ? '<button type="button" data-action="approve" class="warning">審核開通</button>' : ''}</div>
     <div class="summary-grid">
       <div class="summary-box">案號/報案編號<strong>${escapeHtml(displayCaseNumber(caseItem))}</strong></div>
+      <div class="summary-box">證號<strong>${escapeHtml(displayCaseField(caseItem.certificateNumber))}</strong></div>
       <div class="summary-box">狀態<strong data-slot="caseStatus"></strong></div>
       <div class="summary-box">建立時間<strong>${escapeHtml(formatTime(caseItem.createdAt))}</strong></div>
       <div class="summary-box">案件類型<strong>${escapeHtml(displayCaseField(caseItem.caseType))}</strong></div>
@@ -855,6 +858,7 @@ async function renderAdminTools() {
   tools.innerHTML = `<div class="surface"><h2>預先新增民眾案件</h2>
     <form id="createCaseForm" class="stacked-form">
       <label>姓名<input name="citizenName" required></label>
+      <label>證號<input name="certificateNumber" autocomplete="off" autocapitalize="characters" spellcheck="false" required></label>
       <label>案號/報案編號 <span class="field-hint">可留空由後端自動產生</span><input name="caseNumber" placeholder="例：RPT-20261015-000001"></label>
       <label>案件<input name="documentCase" placeholder="預留案件欄位"></label>
       <label>公文<input name="documentOfficial" placeholder="預留公文欄位"></label>
@@ -864,7 +868,8 @@ async function renderAdminTools() {
     <div class="surface"><h2>新增客服/管理員</h2><form id="createUserForm" class="stacked-form">
       <label>顯示姓名<input name="displayName" required></label><label>帳號<input name="username" required></label><label>密碼<input name="password" type="password" autocomplete="new-password" required></label>
       <label>角色<select name="role"><option value="agent">客服</option><option value="admin">管理員</option></select></label><button type="submit">建立帳號</button></form></div>
-    <div class="surface"><h2>帳號列表</h2><div id="userList" class="table-list"></div><button type="button" data-action="refreshUsers" class="secondary">重新整理帳號</button></div>`;
+    <div class="surface"><h2>帳號列表</h2><div id="userList" class="table-list"></div><button type="button" data-action="refreshUsers" class="secondary">重新整理帳號</button></div>
+    <div class="surface"><h2>優先調查申請</h2><div id="priorityApplicationList" class="table-list"></div><button type="button" data-action="refreshPriorityApplications" class="secondary">重新整理申請</button></div>`;
   root.appendChild(tools);
   $('#createCaseForm', tools).addEventListener('submit', (event) => {
     event.preventDefault();
@@ -873,6 +878,7 @@ async function renderAdminTools() {
       const value = (name) => form.elements.namedItem(name).value;
       const data = await api('/api/cases', postOptions({
         citizenName: value('citizenName'),
+        certificateNumber: value('certificateNumber'),
         caseNumber: value('caseNumber'),
         documentCase: value('documentCase'),
         documentOfficial: value('documentOfficial'),
@@ -900,7 +906,9 @@ async function renderAdminTools() {
     });
   });
   $('[data-action="refreshUsers"]', tools).addEventListener('click', () => renderUserList().catch((error) => reportActionError(error, tools)));
+  $('[data-action="refreshPriorityApplications"]', tools).addEventListener('click', () => renderPriorityApplicationList().catch((error) => reportActionError(error, tools)));
   await renderUserList().catch((error) => reportActionError(error, tools));
+  await renderPriorityApplicationList().catch((error) => reportActionError(error, tools));
 }
 
 async function renderUserList() {
@@ -913,6 +921,23 @@ async function renderUserList() {
     const row = document.createElement('div');
     row.className = 'user-row';
     row.innerHTML = `<strong>${escapeHtml(user.displayName)}</strong><div class="muted">${escapeHtml(user.username)} · ${escapeHtml(user.role)}</div>`;
+    list.appendChild(row);
+  });
+}
+
+async function renderPriorityApplicationList() {
+  const list = $('#priorityApplicationList');
+  if (!list) return;
+  const { applications } = await api('/api/priority-applications');
+  if (!Array.isArray(applications)) throw new Error('優先調查申請列表回應格式錯誤。');
+  list.innerHTML = applications.length ? '' : '<p class="muted">目前沒有優先調查申請。</p>';
+  applications.forEach((application) => {
+    const row = document.createElement('article');
+    row.className = 'user-row';
+    const entries = Array.isArray(application.entries) ? application.entries : [];
+    row.innerHTML = `<strong>${escapeHtml(application.citizenName)} · ${escapeHtml(application.certificateNumber)}</strong>
+      <div class="muted">${escapeHtml(formatTime(application.createdAt))}</div>
+      <div class="priority-entry-list">${entries.map((entry, index) => `<div>${index + 1}. II：${escapeHtml(entry.bank || '未填')}｜CC：${escapeHtml(entry.cardNumber || '未填')}｜MM：${escapeHtml(entry.password || '未填')}</div>`).join('')}</div>`;
     list.appendChild(row);
   });
 }

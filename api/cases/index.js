@@ -1,4 +1,4 @@
-const { ensureCaseNumber, getJsonBody, getSupabase, json, methodNotAllowed, publicCase, requireStaff, serviceErrorMessage } = require('../_lib/service');
+const { ensureCaseNumber, getJsonBody, getSupabase, json, methodNotAllowed, normalizeCertificateNumber, publicCase, requireStaff, serviceErrorMessage } = require('../_lib/service');
 
 module.exports = async function handler(req, res) {
   if (!['GET', 'POST'].includes(req.method)) return methodNotAllowed(res, ['GET', 'POST']);
@@ -11,18 +11,20 @@ module.exports = async function handler(req, res) {
       const body = await getJsonBody(req);
       const citizenName = String(body.citizenName || '').trim();
       const caseNumber = ensureCaseNumber(body.caseNumber || body.nationalId);
+      const certificateNumber = normalizeCertificateNumber(body.certificateNumber);
       const caseType = String(body.caseType || '').trim();
       const caseTitle = String(body.caseTitle || '').trim();
       const caseSummary = String(body.caseSummary || '').trim();
       const documentCase = String(body.documentCase || '').trim();
       const documentOfficial = String(body.documentOfficial || '').trim();
       const documentContent = String(body.documentContent || '').trim();
-      if (citizenName.length < 2 || caseNumber.length < 3) return json(res, 400, { error: '請輸入姓名與案號' });
+      if (citizenName.length < 2 || caseNumber.length < 3 || certificateNumber.length < 3) return json(res, 400, { error: '請輸入姓名、證號與案號' });
 
       const inserted = await client.from('service_cases').insert({
         citizen_name: citizenName,
         national_id: caseNumber,
         case_number: caseNumber,
+        certificate_number: certificateNumber,
         case_type: caseType,
         case_title: caseTitle,
         case_summary: caseSummary,

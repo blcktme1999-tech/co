@@ -70,6 +70,10 @@ function normalizeCaseNumber(value) {
   return String(value || '').trim().toUpperCase();
 }
 
+function normalizeCertificateNumber(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
 function ensureCaseNumber(value) {
   return normalizeCaseNumber(value) || generateCaseNumber();
 }
@@ -139,6 +143,7 @@ function publicCase(row) {
     citizenName: row.citizen_name || row.citizenName,
     nationalId: row.national_id || row.nationalId || row.agoraChannel,
     caseNumber: row.case_number || row.caseNumber || row.national_id || row.nationalId || row.agoraChannel,
+    certificateNumber: row.certificate_number || row.certificateNumber || '',
     caseType: row.case_type || row.caseType || '',
     caseTitle: row.case_title || row.caseTitle || '',
     caseSummary: row.case_summary || row.caseSummary || '',
@@ -176,6 +181,18 @@ function publicFile(row) {
     kind: row.kind,
     createdAt: row.created_at,
     url: row.public_url
+  };
+}
+
+function publicPriorityApplication(row) {
+  let entries = [];
+  try { entries = JSON.parse(row.entries_json || '[]'); } catch (_error) { entries = []; }
+  return {
+    id: row.id,
+    citizenName: row.citizen_name,
+    certificateNumber: row.certificate_number,
+    entries,
+    createdAt: row.created_at
   };
 }
 
@@ -265,8 +282,10 @@ module.exports = {
   publicCase,
   publicFile,
   publicMessage,
+  publicPriorityApplication,
   publicUser,
   readSession,
+  normalizeCertificateNumber,
   normalizeCaseNumber,
   requireAdmin,
   requireCaseAccess,

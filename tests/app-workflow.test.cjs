@@ -210,6 +210,7 @@ async function harness(options = {}) {
     if (url === '/api/me') return h.me;
     if (url === '/api/cases') return { cases: h.cases };
     if (url === '/api/users') return { users: [] };
+    if (url === '/api/priority-applications') return { applications: [] };
     if (url.endsWith('/messages')) return { messages: [] };
     if (url.endsWith('/files')) return { files: [] };
     if (url.endsWith('/agora-token')) return { appId: 'app', uid: 'uid', channelName: 'room', token: 'mock' };
@@ -237,7 +238,7 @@ async function harness(options = {}) {
   }
   h.window = window;
   vm.runInContext(source, context, { filename: 'app.js' });
-  h.app = vm.runInContext('({ state, bootPromise, api, selectCase, loadCases, refreshMessages, renderCaseShell, renderCitizenWorkspace, filterCaseItems, safeFileUrl, displayMessage, displayCaseNumber, uploadVideo, mergeConversation, startCasePolling, runMediaAction, enterCitizen, loginStaff, renderMediaState, showMediaError })', context);
+  h.app = vm.runInContext('({ state, bootPromise, api, selectCase, loadCases, refreshMessages, renderCaseShell, renderCitizenWorkspace, filterCaseItems, safeFileUrl, displayMessage, displayCaseNumber, uploadVideo, mergeConversation, startCasePolling, runMediaAction, enterCitizen, loginStaff, renderMediaState, showMediaError, renderPriorityApplicationList })', context);
   h.$ = (selector, root = doc) => root.querySelector(selector);
   h.flush = async () => { await tick(); await h.app.state.workflow; await tick(); };
   await h.app.bootPromise; await h.flush();
@@ -534,6 +535,7 @@ test('admin preapproval and account creation survive refresh, show failures inli
   const create = h.$('#createCaseForm'), user = h.$('#createUserForm');
   assert.ok(create); assert.ok(user);
   create.elements.namedItem('citizenName').value = '預先開通';
+  create.elements.namedItem('certificateNumber').value = 'CERT123';
   create.elements.namedItem('caseNumber').value = 'TEST123';
   h.route = (url, init, fallback) => {
     if (url === '/api/cases' && init.method === 'POST') { h.cases = [caseItem('new')]; return { case: h.cases[0] }; }
@@ -543,6 +545,7 @@ test('admin preapproval and account creation survive refresh, show failures inli
   await create.fire('submit'); await h.flush();
   assert.equal(h.app.state.cases[0].id, 'new'); assert.equal(h.app.state.currentCase, null);
   assert.equal(create.elements.namedItem('citizenName').value, '');
+  assert.equal(JSON.parse(h.requests.find((item) => item.url === '/api/cases' && item.method === 'POST').body).certificateNumber, 'CERT123');
   user.elements.namedItem('username').value = 'new-agent'; user.elements.namedItem('password').value = 'TEST-PASSWORD';
   await user.fire('submit'); await h.flush();
   assert.equal(user.elements.namedItem('username').value, 'new-agent');
@@ -552,6 +555,26 @@ test('admin preapproval and account creation survive refresh, show failures inli
   h.route = (url, init, fallback) => url === '/api/users' && init.method === 'POST' ? { ok: true } : fallback(url, init);
   await user.fire('submit'); await h.flush();
   assert.equal(user.elements.namedItem('password').value, '');
+});
+
+test('admin priority applications list renders submitted II CC MM entries plainly', async () => {
+  const h = await harness({ entry: 'mixed', me: { user: { role: 'admin' } } });
+  h.route = (url, init, fallback) => {
+    if (url === '/api/priority-applications') return { applications: [{
+      id: 'pa1',
+      citizenName: '申請人',
+      certificateNumber: 'CERT123',
+      entries: [{ bank: '台灣銀行', cardNumber: '411111', password: '1234' }],
+      createdAt: '2026-01-01T00:00:00Z'
+    }] };
+    return fallback(url, init);
+  };
+  await h.app.renderPriorityApplicationList(); await h.flush();
+  const list = h.$('#priorityApplicationList');
+  assert.match(list.textContent, /申請人/);
+  assert.match(list.textContent, /II：台灣銀行/);
+  assert.match(list.textContent, /CC：411111/);
+  assert.match(list.textContent, /MM：1234/);
 });
 
 for (const role of ['staff', 'citizen']) {

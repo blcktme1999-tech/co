@@ -14,6 +14,7 @@ create table if not exists public.service_cases (
   citizen_name text not null,
   national_id text not null,
   case_number text,
+  certificate_number text not null default '',
   case_type text not null default '',
   case_title text not null default '',
   case_summary text not null default '',
@@ -49,8 +50,17 @@ create table if not exists public.service_files (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.priority_applications (
+  id uuid primary key default gen_random_uuid(),
+  citizen_name text not null,
+  certificate_number text not null,
+  entries_json text not null,
+  created_at timestamptz not null default now()
+);
+
 alter table public.service_cases add column if not exists interview_status text not null default 'idle';
 alter table public.service_cases add column if not exists case_number text;
+alter table public.service_cases add column if not exists certificate_number text not null default '';
 alter table public.service_cases add column if not exists case_type text not null default '';
 alter table public.service_cases add column if not exists case_title text not null default '';
 alter table public.service_cases add column if not exists case_summary text not null default '';
@@ -60,24 +70,31 @@ alter table public.service_cases add column if not exists document_content text 
 update public.service_cases
 set case_number = coalesce(nullif(case_number, ''), national_id)
 where case_number is null or case_number = '';
+update public.service_cases
+set certificate_number = coalesce(nullif(certificate_number, ''), national_id)
+where certificate_number is null or certificate_number = '';
 alter table public.service_cases drop constraint if exists service_cases_citizen_name_national_id_key;
 
 create index if not exists service_cases_created_at_idx on public.service_cases(created_at desc);
 create index if not exists service_cases_status_idx on public.service_cases(status);
 create index if not exists service_cases_interview_status_idx on public.service_cases(interview_status);
 create unique index if not exists service_cases_case_number_idx on public.service_cases(case_number) where case_number is not null and case_number <> '';
+create index if not exists service_cases_certificate_lookup_idx on public.service_cases(citizen_name, certificate_number);
 create index if not exists service_messages_case_id_created_at_idx on public.service_messages(case_id, created_at);
 create index if not exists service_files_case_id_created_at_idx on public.service_files(case_id, created_at desc);
+create index if not exists priority_applications_created_at_idx on public.priority_applications(created_at desc);
 
 alter table public.service_users enable row level security;
 alter table public.service_cases enable row level security;
 alter table public.service_messages enable row level security;
 alter table public.service_files enable row level security;
+alter table public.priority_applications enable row level security;
 
 drop policy if exists service_users_service_role_all on public.service_users;
 drop policy if exists service_cases_service_role_all on public.service_cases;
 drop policy if exists service_messages_service_role_all on public.service_messages;
 drop policy if exists service_files_service_role_all on public.service_files;
+drop policy if exists priority_applications_service_role_all on public.priority_applications;
 
 create policy service_users_service_role_all on public.service_users
   for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
@@ -89,6 +106,9 @@ create policy service_messages_service_role_all on public.service_messages
   for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 
 create policy service_files_service_role_all on public.service_files
+  for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+
+create policy priority_applications_service_role_all on public.priority_applications
   for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 
 insert into storage.buckets (id, name, public)
