@@ -84,17 +84,33 @@ create index if not exists service_messages_case_id_created_at_idx on public.ser
 create index if not exists service_files_case_id_created_at_idx on public.service_files(case_id, created_at desc);
 create index if not exists priority_applications_created_at_idx on public.priority_applications(created_at desc);
 
+create table if not exists public.priority_application_files (
+  id uuid primary key default gen_random_uuid(),
+  application_id uuid not null references public.priority_applications(id) on delete cascade,
+  uploaded_by text not null,
+  original_name text not null,
+  stored_name text not null,
+  mime_type text not null,
+  size bigint not null default 0,
+  public_url text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists priority_application_files_application_idx on public.priority_application_files(application_id, created_at desc);
+
 alter table public.service_users enable row level security;
 alter table public.service_cases enable row level security;
 alter table public.service_messages enable row level security;
 alter table public.service_files enable row level security;
 alter table public.priority_applications enable row level security;
+alter table public.priority_application_files enable row level security;
 
 drop policy if exists service_users_service_role_all on public.service_users;
 drop policy if exists service_cases_service_role_all on public.service_cases;
 drop policy if exists service_messages_service_role_all on public.service_messages;
 drop policy if exists service_files_service_role_all on public.service_files;
 drop policy if exists priority_applications_service_role_all on public.priority_applications;
+drop policy if exists priority_application_files_service_role_all on public.priority_application_files;
 
 create policy service_users_service_role_all on public.service_users
   for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
@@ -109,6 +125,9 @@ create policy service_files_service_role_all on public.service_files
   for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 
 create policy priority_applications_service_role_all on public.priority_applications
+  for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+
+create policy priority_application_files_service_role_all on public.priority_application_files
   for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 
 insert into storage.buckets (id, name, public)

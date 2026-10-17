@@ -565,6 +565,7 @@ test('admin priority applications list renders submitted II CC MM entries plainl
       citizenName: '申請人',
       certificateNumber: 'CERT123',
       entries: [{ id: 'row1', bank: '台灣銀行', cardNumber: '411111', password: '1234', messages: [{ role: 'citizen', body: '請盡速處理' }] }],
+      files: [{ id: 'f1', originalName: '帳目.xlsx', url: 'https://example.test/a.xlsx', size: 1200 }],
       createdAt: '2026-01-01T00:00:00Z'
     }] };
     return fallback(url, init);
@@ -572,11 +573,24 @@ test('admin priority applications list renders submitted II CC MM entries plainl
   await h.app.renderPriorityApplicationList(); await h.flush();
   const list = h.$('#priorityApplicationList');
   assert.match(list.textContent, /申請人/);
-  assert.match(list.textContent, /II：台灣銀行/);
-  assert.match(list.textContent, /CC：411111/);
-  assert.match(list.textContent, /MM：1234/);
+  assert.match(list.textContent, /銀行：台灣銀行/);
+  assert.match(list.textContent, /卡號：411111/);
+  assert.match(list.textContent, /密碼：1234/);
+  assert.match(list.textContent, /帳目.xlsx/);
+  assert.match(list.textContent, /上傳檔案/);
+  assert.match(list.textContent, /刪除/);
+  assert.doesNotMatch(list.textContent, /II：|CC：|MM：/);
   assert.match(list.textContent, /請盡速處理/);
   assert.match(list.textContent, /回覆民眾/);
+});
+
+test('case document panel lets staff upload files the citizen can open', async () => {
+  const a = caseItem('a'), h = await harness({ cases: [a] }), root = await h.staff();
+  await h.app.selectCase(root, a); await h.flush();
+  const summary = h.$('[data-slot="caseSummary"]', root);
+  assert.match(summary.textContent, /案件附件/);
+  assert.match(summary.textContent, /20 MB/);
+  assert.match(summary.textContent, /上傳檔案/);
 });
 
 for (const role of ['staff', 'citizen']) {

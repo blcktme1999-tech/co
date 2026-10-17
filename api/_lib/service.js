@@ -5,6 +5,7 @@ const { createClient } = require('@supabase/supabase-js');
 const SESSION_COOKIE = 'cib_service_session';
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
 const VIDEO_BUCKET = process.env.SUPABASE_VIDEO_BUCKET || 'report-videos';
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
 function json(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -260,7 +261,38 @@ async function loadSupabasePriorityApplications(client, filters) {
     }
     applications.push(application);
   }
-  return applications;
+  return attachPriorityFiles(client, applications);
+}
+
+function attachmentTooLarge(size) {
+  const bytes = Number(size);
+  return !Number.isFinite(bytes) || bytes <= 0 || bytes > MAX_ATTACHMENT_BYTES;
+}
+
+async function createSignedUpload(client, storedName) {
+  const signed = await client.storage.from(VIDEO_BUCKET).createSignedUploadUrl(storedName);
+  if (signed.error) throw signed.error;
+  const raw = String(signed.data?.signedUrl || '');
+  const config = getConfig();
+  const signedUrl = raw.startsWith('http') ? raw : `${config.supabaseUrl}/storage/v1${raw.startsWith('/') ? '' : '/'}${raw}`;
+  return { mode: 'signed', signedUrl, token: signed.data?.token || '', storedName };
+}
+
+async function attachPriorityFiles(client, applications) {
+  const withEmpty = applications.map((item) => ({ ...item, files: [] }));
+  if (!withEmpty.length) return withEmpty;
+  const result = await client.from('priority_application_files').select('*').in('application_id', withEmpty.map((item) => item.id)).order('created_at', { ascending: false });
+  if (result.error) {
+    if (/priority_application_files|schema cache|does not exist|Could not find/i.test(result.error.message || '')) return withEmpty;
+    throw result.error;
+  }
+  const grouped = new Map();
+  for (const row of result.data || []) {
+    const list = grouped.get(row.application_id) || [];
+    list.push(publicFile(row));
+    grouped.set(row.application_id, list);
+  }
+  return withEmpty.map((item) => ({ ...item, files: grouped.get(item.id) || [] }));
 }
 
 function publicPriorityApplication(row) {
@@ -346,8 +378,12 @@ function safeName(name) {
 }
 
 module.exports = {
+  MAX_ATTACHMENT_BYTES,
   VIDEO_BUCKET,
+  attachPriorityFiles,
+  attachmentTooLarge,
   bcrypt,
+  createSignedUpload,
   createSessionCookie,
   dataUrlToBuffer,
   ensureDefaultAdmin,

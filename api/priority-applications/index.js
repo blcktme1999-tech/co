@@ -24,7 +24,7 @@ async function handler(req, res) {
     const identity = await matchingIdentity(client, body);
     if (identity.error) return json(res, identity.status, { error: identity.error });
     const entries = priorityEntriesFromInput(body.entries);
-    if (!entries.length) return json(res, 400, { error: '請至少填寫一筆銀行別、卡號或密碼' });
+    if (!entries.length) return json(res, 400, { error: '請至少填寫一筆銀行、卡號或密碼' });
     const inserted = await client.from('priority_applications').insert({
       citizen_name: identity.citizenName,
       certificate_number: identity.certificateNumber,

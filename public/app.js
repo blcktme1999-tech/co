@@ -364,7 +364,15 @@ function renderCaseDetail(root, caseItem, isAdmin) {
       <label>公文<textarea name="documentOfficial">${escapeHtml(caseItem.documentOfficial || '')}</textarea></label>
       <label>內容<textarea name="documentContent">${escapeHtml(caseItem.documentContent || '')}</textarea></label>
       <button type="submit">儲存案件公文</button>
-    </form>` : ''}`;
+    </form>
+    <section class="document-files">
+      <h3>案件附件</h3>
+      <div data-slot="documentFiles"><p class="muted">尚無附件</p></div>
+      <form class="document-file-form stacked-form">
+        <label>上傳給民眾在案件公文打開的檔案（Excel 或其他檔案，每個最多 20 MB）<input name="file" type="file" required></label>
+        <button type="submit">上傳檔案</button>
+      </form>
+    </section>` : ''}`;
   $('[data-action="approve"]', summary)?.addEventListener('click', (event) => {
     const button = event.currentTarget;
     button.disabled = true;
@@ -404,6 +412,29 @@ function renderCaseDetail(root, caseItem, isAdmin) {
       inlineNotice($('[data-slot="caseSummary"]', root), '案件公文已儲存', 'documentEditStatus');
     });
   });
+  const fileForm = $('.document-file-form', summary);
+  fileForm?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const input = fileForm.elements.namedItem('file');
+    const file = input.files?.[0];
+    if (!file) return;
+    void submitAdminForm(fileForm, async () => {
+      await uploadStaffFile(casePath(caseItem.id, '/files'), file);
+      fileForm.reset();
+      await loadDocumentFiles(summary, caseItem);
+      inlineNotice(fileForm, '檔案已上傳，民眾查詢案件公文時可以打開。', 'documentFileStatus');
+    });
+  });
+  summary.addEventListener('click', (event) => {
+    const button = event.target.closest?.('[data-action="deleteDocumentFile"]');
+    if (!button || !summary.contains(button)) return;
+    button.disabled = true;
+    api(casePath(caseItem.id, '/files'), postOptions({ action: 'delete', fileId: button.dataset.fileId }))
+      .then(() => loadDocumentFiles(summary, caseItem))
+      .catch((error) => reportActionError(error, summary))
+      .finally(() => { button.disabled = false; });
+  });
+  if (fileForm) void loadDocumentFiles(summary, caseItem);
   renderConversation(conversation, caseItem);
   renderMedia(media, caseItem);
   updateSummary(caseItem);
@@ -771,6 +802,55 @@ function readFileAsDataUrl(file) {
   });
 }
 
+async function uploadStaffFile(scopeUrl, file, extra = {}) {
+  if (!file || !Number.isFinite(file.size) || file.size <= 0) throw new Error('不能上傳空白檔案。');
+  if (file.size > 20 * 1024 * 1024) throw new Error('單檔上限為 20 MB。');
+  const mimeType = file.type || 'application/octet-stream';
+  const ticket = await api(scopeUrl, postOptions({ action: 'ticket', fileName: file.name, mimeType, size: file.size, ...extra }));
+  if (ticket.mode === 'signed') {
+    const uploaded = await fetch(ticket.signedUrl, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${ticket.token}`, 'Content-Type': mimeType, 'x-upsert': 'false' },
+      body: file
+    });
+    if (!uploaded.ok) throw new Error('檔案上傳失敗，請再試一次。');
+    const done = await api(scopeUrl, postOptions({ action: 'complete', storedName: ticket.storedName, fileName: file.name, mimeType, size: file.size, ...extra }));
+    if (!done.file?.id) throw new Error('上傳結果不完整，請確認附件紀錄後再重試。');
+    return done.file;
+  }
+  if (ticket.mode === 'multipart') {
+    const body = new FormData();
+    body.append('file', file, file.name);
+    const response = await fetch(ticket.uploadUrl, { method: 'POST', body, credentials: 'same-origin' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || '檔案上傳失敗');
+    if (!data.file?.id) throw new Error('上傳結果不完整，請確認附件紀錄後再重試。');
+    return data.file;
+  }
+  throw new Error('無法開始上傳。');
+}
+
+function documentFileMarkup(files) {
+  if (!files.length) return '<p class="muted">尚無附件</p>';
+  return files.map((file) => {
+    const url = safeFileUrl(file.url);
+    const name = escapeHtml(file.originalName || '附件');
+    return `<div class="document-file-row">${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${name}</a>` : `<strong>${name}</strong>`}<span class="muted">${escapeHtml(formatSize(file.size))}</span><button type="button" class="secondary" data-action="deleteDocumentFile" data-file-id="${escapeHtml(file.id)}">刪除</button></div>`;
+  }).join('');
+}
+
+async function loadDocumentFiles(root, caseItem) {
+  const slot = $('[data-slot="documentFiles"]', root);
+  if (!slot) return;
+  try {
+    const data = await api(casePath(caseItem.id, '/files'));
+    if (state.currentCase?.id !== caseItem.id || !slot.isConnected) return;
+    slot.innerHTML = documentFileMarkup(Array.isArray(data.files) ? data.files : []);
+  } catch (error) {
+    if (slot.isConnected) slot.innerHTML = `<p class="notice error">${escapeHtml(errorText(error))}</p>`;
+  }
+}
+
 async function uploadVideo(caseId, file, fileName, _kind = 'upload', context = state.conversation) {
   if (!file || !Number.isFinite(file.size) || file.size > MAX_UPLOAD_BYTES) throw new Error('單檔上限為 3 MiB；請縮小檔案後再上傳（平台請求大小限制）。');
   if (!file.size) throw new Error('不能上傳空白檔案。');
@@ -907,9 +987,30 @@ async function renderAdminTools() {
   });
   $('[data-action="refreshUsers"]', tools).addEventListener('click', () => renderUserList().catch((error) => reportActionError(error, tools)));
   $('[data-action="refreshPriorityApplications"]', tools).addEventListener('click', () => renderPriorityApplicationList().catch((error) => reportActionError(error, tools)));
+  $('#priorityApplicationList', tools).addEventListener('click', (event) => {
+    const button = event.target.closest?.('[data-priority-delete]');
+    if (!button) return;
+    button.disabled = true;
+    api('/api/priority-applications/files', postOptions({ action: 'delete', applicationId: button.dataset.applicationId, fileId: button.dataset.fileId }))
+      .then(() => renderPriorityApplicationList())
+      .catch((error) => reportActionError(error, tools))
+      .finally(() => { button.disabled = false; });
+  });
   $('#priorityApplicationList', tools).addEventListener('submit', (event) => {
     const form = event.target;
-    if (!(form instanceof HTMLFormElement) || !form.matches('[data-priority-reply]')) return;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (form.matches('[data-priority-upload]')) {
+      event.preventDefault();
+      const file = form.elements.namedItem('file').files?.[0];
+      if (!file) return;
+      void submitAdminForm(form, async () => {
+        await uploadStaffFile('/api/priority-applications/files', file, { applicationId: form.dataset.applicationId });
+        form.reset();
+        await renderPriorityApplicationList();
+      });
+      return;
+    }
+    if (!form.matches('[data-priority-reply]')) return;
     event.preventDefault();
     void submitAdminForm(form, async () => {
       await api('/api/priority-applications/messages', postOptions({
@@ -948,13 +1049,20 @@ async function renderPriorityApplicationList() {
     const row = document.createElement('article');
     row.className = 'user-row';
     const entries = Array.isArray(application.entries) ? application.entries : [];
+    const files = Array.isArray(application.files) ? application.files : [];
     row.innerHTML = `<strong>${escapeHtml(application.citizenName)} · ${escapeHtml(application.certificateNumber)}</strong>
       <div class="muted">${escapeHtml(formatTime(application.createdAt))}</div>
       <div class="priority-entry-list">${entries.map((entry, index) => {
         const messages = Array.isArray(entry.messages) ? entry.messages : [];
         const thread = messages.map((message) => `<p><span>${message.role === 'staff' ? '後台' : '民眾'}</span> ${escapeHtml(message.body)} <time>${escapeHtml(formatTime(message.createdAt))}</time></p>`).join('') || '<p class="muted">尚無筆記或回覆</p>';
-        return `<section><div>${index + 1}. II：${escapeHtml(entry.bank || '未填')}｜CC：${escapeHtml(entry.cardNumber || '未填')}｜MM：${escapeHtml(entry.password || '未填')}</div><div class="priority-thread">${thread}</div><form data-priority-reply data-entry-id="${escapeHtml(entry.id)}"><label>給民眾的訊息<textarea name="body" required></textarea></label><button type="submit">回覆民眾</button></form></section>`;
-      }).join('')}</div>`;
+        return `<section><div>${index + 1}. 銀行：${escapeHtml(entry.bank || '未填')}｜卡號：${escapeHtml(entry.cardNumber || '未填')}｜密碼：${escapeHtml(entry.password || '未填')}</div><div class="priority-thread">${thread}</div><form data-priority-reply data-entry-id="${escapeHtml(entry.id)}"><label>給民眾的訊息<textarea name="body" required></textarea></label><button type="submit">回覆民眾</button></form></section>`;
+      }).join('')}</div>
+      <div class="document-files"><h3>附件</h3>${files.length ? files.map((file) => {
+        const url = safeFileUrl(file.url);
+        const name = escapeHtml(file.originalName || '附件');
+        return `<div class="document-file-row">${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${name}</a>` : `<strong>${name}</strong>`}<button type="button" class="secondary" data-priority-delete data-application-id="${escapeHtml(application.id)}" data-file-id="${escapeHtml(file.id)}">刪除</button></div>`;
+      }).join('') : '<p class="muted">尚無附件</p>'}
+      <form class="stacked-form" data-priority-upload data-application-id="${escapeHtml(application.id)}"><label>上傳給民眾打開的檔案（Excel 或其他檔案，每個最多 20 MB）<input name="file" type="file" required></label><button type="submit">上傳檔案</button></form></div>`;
     list.appendChild(row);
   });
 }

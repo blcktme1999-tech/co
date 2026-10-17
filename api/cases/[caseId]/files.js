@@ -1,4 +1,8 @@
-const { VIDEO_BUCKET, dataUrlToBuffer, getJsonBody, getSupabase, json, methodNotAllowed, publicFile, requireCaseAccess, safeName } = require('../../_lib/service');
+const { VIDEO_BUCKET, attachmentTooLarge, createSignedUpload, dataUrlToBuffer, getJsonBody, getSupabase, json, methodNotAllowed, publicFile, requireCaseAccess, requireStaff, safeName, serviceErrorMessage } = require('../../_lib/service');
+
+function storedFileName(caseId, originalName) {
+  return `${caseId}/${Date.now()}-${safeName(originalName)}`;
+}
 
 async function handler(req, res) {
   if (!['GET', 'POST'].includes(req.method)) return methodNotAllowed(res, ['GET', 'POST']);
@@ -6,7 +10,6 @@ async function handler(req, res) {
     const client = getSupabase();
     const access = await requireCaseAccess(req, res, client, req.query.caseId);
     if (!access) return;
-    if (access.caseRow.status === 'closed') return json(res, 400, { error: '案件已結案' });
 
     if (req.method === 'GET') {
       const result = await client.from('service_files').select('*').eq('case_id', req.query.caseId).order('created_at', { ascending: false });
@@ -15,6 +18,45 @@ async function handler(req, res) {
     }
 
     const body = await getJsonBody(req);
+    if (body.action === 'ticket' || body.action === 'complete' || body.action === 'delete') {
+      const session = requireStaff(req, res);
+      if (!session) return;
+      const caseResult = await client.from('service_cases').select('id').eq('id', req.query.caseId).maybeSingle();
+      if (caseResult.error) throw caseResult.error;
+      if (!caseResult.data) return json(res, 404, { error: '找不到案件' });
+      if (body.action === 'ticket') {
+        if (attachmentTooLarge(body.size)) return json(res, 413, { error: '單檔上限為 20 MB。' });
+        const storedName = storedFileName(req.query.caseId, body.fileName);
+        return json(res, 200, await createSignedUpload(client, storedName));
+      }
+      if (body.action === 'delete') {
+        const existing = await client.from('service_files').select('*').eq('id', body.fileId).eq('case_id', req.query.caseId).maybeSingle();
+        if (existing.error) throw existing.error;
+        if (!existing.data) return json(res, 404, { error: '找不到檔案' });
+        const removed = await client.storage.from(VIDEO_BUCKET).remove([existing.data.stored_name]);
+        if (removed.error) throw removed.error;
+        const deleted = await client.from('service_files').delete().eq('id', existing.data.id);
+        if (deleted.error) throw deleted.error;
+        return json(res, 200, { ok: true });
+      }
+      const storedName = String(body.storedName || '');
+      if (!storedName.startsWith(`${req.query.caseId}/`) || storedName.includes('..')) return json(res, 400, { error: '檔案路徑錯誤' });
+      if (attachmentTooLarge(body.size)) return json(res, 413, { error: '單檔上限為 20 MB。' });
+      const publicResult = client.storage.from(VIDEO_BUCKET).getPublicUrl(storedName);
+      const inserted = await client.from('service_files').insert({
+        case_id: req.query.caseId,
+        uploaded_by: session.user.displayName || '服務人員',
+        original_name: String(body.fileName || 'attachment').slice(0, 255),
+        stored_name: storedName,
+        mime_type: String(body.mimeType || 'application/octet-stream').slice(0, 255),
+        size: Number(body.size),
+        kind: 'upload',
+        public_url: publicResult.data?.publicUrl || ''
+      }).select('*').single();
+      if (inserted.error) throw inserted.error;
+      return json(res, 200, { file: publicFile(inserted.data) });
+    }
+    if (access.caseRow.status === 'closed') return json(res, 400, { error: '案件已結案' });
     const parsed = dataUrlToBuffer(body.dataUrl);
     if (!parsed) return json(res, 400, { error: '檔案格式錯誤，請重新上傳' });
     if (parsed.buffer.length > 3 * 1024 * 1024) return json(res, 413, { error: '目前每個附件上限為 3 MiB，請縮小檔案後再上傳。' });
@@ -40,7 +82,7 @@ async function handler(req, res) {
     if (inserted.error) throw inserted.error;
     json(res, 200, { file: publicFile(inserted.data) });
   } catch (error) {
-    json(res, 500, { error: error.message || '檔案處理失敗' });
+    json(res, 500, { error: serviceErrorMessage(error, '檔案處理失敗') });
   }
 }
 
