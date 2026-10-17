@@ -184,6 +184,85 @@ function publicFile(row) {
   };
 }
 
+function priorityMessage(role, body, createdAt) {
+  const text = String(body || '').trim();
+  if (!text) return null;
+  return {
+    id: crypto.randomUUID(),
+    role: role === 'staff' ? 'staff' : 'citizen',
+    body: text.slice(0, 4000),
+    createdAt: createdAt || new Date().toISOString()
+  };
+}
+
+function normalizePriorityEntries(entries, createdAt) {
+  const fallbackTime = createdAt || new Date().toISOString();
+  return (Array.isArray(entries) ? entries : []).map((entry) => {
+    const messages = [];
+    if (Array.isArray(entry?.messages)) {
+      for (const message of entry.messages) {
+        const body = String(message?.body || '').trim();
+        if (!body) continue;
+        messages.push({
+          id: String(message.id || crypto.randomUUID()),
+          role: message?.role === 'staff' ? 'staff' : 'citizen',
+          body: body.slice(0, 4000),
+          createdAt: message.createdAt || fallbackTime
+        });
+      }
+    }
+    const note = String(entry?.note || '').trim();
+    if (note && !messages.some((message) => message.role === 'citizen' && message.body === note)) {
+      messages.unshift({ id: crypto.randomUUID(), role: 'citizen', body: note.slice(0, 4000), createdAt: fallbackTime });
+    }
+    return {
+      id: String(entry?.id || crypto.randomUUID()),
+      bank: String(entry?.bank || '').trim(),
+      cardNumber: String(entry?.cardNumber || '').trim(),
+      password: String(entry?.password || '').trim(),
+      messages
+    };
+  }).filter((entry) => entry.bank || entry.cardNumber || entry.password || entry.messages.length);
+}
+
+function priorityEntriesFromInput(entries) {
+  const createdAt = new Date().toISOString();
+  return normalizePriorityEntries((Array.isArray(entries) ? entries : []).map((entry) => ({
+    bank: entry?.bank,
+    cardNumber: entry?.cardNumber,
+    password: entry?.password,
+    note: entry?.note
+  })), createdAt);
+}
+
+function appendPriorityMessage(entries, entryId, role, body) {
+  const message = priorityMessage(role, body);
+  if (!message) return { error: '請輸入訊息' };
+  const next = normalizePriorityEntries(entries);
+  const entry = next.find((item) => item.id === String(entryId || ''));
+  if (!entry) return { error: '找不到這筆申請' };
+  entry.messages.push(message);
+  return { entries: next };
+}
+
+async function loadSupabasePriorityApplications(client, filters) {
+  let query = client.from('priority_applications').select('*').order('created_at', { ascending: false });
+  if (filters?.citizenName) query = query.eq('citizen_name', filters.citizenName).eq('certificate_number', filters.certificateNumber);
+  const result = await query;
+  if (result.error) throw result.error;
+  const applications = [];
+  for (const row of result.data || []) {
+    const application = publicPriorityApplication(row);
+    const serialized = JSON.stringify(application.entries);
+    if (serialized !== (row.entries_json || '[]')) {
+      const updated = await client.from('priority_applications').update({ entries_json: serialized }).eq('id', row.id);
+      if (updated.error) throw updated.error;
+    }
+    applications.push(application);
+  }
+  return applications;
+}
+
 function publicPriorityApplication(row) {
   let entries = [];
   try { entries = JSON.parse(row.entries_json || '[]'); } catch (_error) { entries = []; }
@@ -191,7 +270,7 @@ function publicPriorityApplication(row) {
     id: row.id,
     citizenName: row.citizen_name,
     certificateNumber: row.certificate_number,
-    entries,
+    entries: normalizePriorityEntries(entries, row.created_at),
     createdAt: row.created_at
   };
 }
@@ -282,6 +361,10 @@ module.exports = {
   publicCase,
   publicFile,
   publicMessage,
+  appendPriorityMessage,
+  loadSupabasePriorityApplications,
+  normalizePriorityEntries,
+  priorityEntriesFromInput,
   publicPriorityApplication,
   publicUser,
   readSession,

