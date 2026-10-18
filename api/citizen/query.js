@@ -13,8 +13,9 @@ async function handler(req, res) {
     const body = req.method === 'GET' ? req.query : await getJsonBody(req);
     const citizenName = String(body.citizenName || '').trim();
     const certificateNumber = normalizeCertificateNumber(body.certificateNumber || body.nationalId);
-    const caseNumber = String(body.caseNumber || '').trim();
-    if (!citizenName || !certificateNumber || !caseNumber) return json(res, 404, { error: '查無資料' });
+    if (citizenName.length < 2 || certificateNumber.length < 3) {
+      return json(res, 400, { error: '請輸入姓名與證號' });
+    }
 
     const client = getSupabase();
     const result = await client
@@ -22,10 +23,8 @@ async function handler(req, res) {
       .select('*')
       .eq('citizen_name', citizenName)
       .eq('certificate_number', certificateNumber)
-      .eq('case_number', caseNumber)
       .order('created_at', { ascending: false });
     if (result.error) throw result.error;
-    if (!(result.data || []).length) return json(res, 404, { error: '查無資料' });
 
     const caseIds = (result.data || []).map((item) => item.id);
     let filesByCaseId = {};

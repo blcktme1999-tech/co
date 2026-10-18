@@ -453,15 +453,11 @@ function queryCitizenCases(req, res) {
   const source = req.method === 'GET' ? req.query : req.body;
   const citizenName = String(source.citizenName || '').trim();
   const certificateNumber = normalizeCertificateNumber(source.certificateNumber || source.nationalId);
-  const caseNumber = String(source.caseNumber || '').trim();
-  if (!citizenName || !certificateNumber || !caseNumber) return res.status(404).json({ error: '查無資料' });
+  if (citizenName.length < 2 || certificateNumber.length < 3) {
+    return res.status(400).json({ error: '請輸入姓名與證號' });
+  }
 
-  const cases = db.prepare(`
-    SELECT * FROM cases
-    WHERE citizen_name = ? AND certificate_number = ? AND case_number = ?
-    ORDER BY created_at DESC
-  `).all(citizenName, certificateNumber, caseNumber);
-  if (!cases.length) return res.status(404).json({ error: '查無資料' });
+  const cases = certificateCases(citizenName, certificateNumber);
   const filesByCaseId = {};
   for (const item of cases) {
     filesByCaseId[item.id] = db.prepare(`
