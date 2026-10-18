@@ -78,7 +78,8 @@ alter table public.service_cases drop constraint if exists service_cases_citizen
 create index if not exists service_cases_created_at_idx on public.service_cases(created_at desc);
 create index if not exists service_cases_status_idx on public.service_cases(status);
 create index if not exists service_cases_interview_status_idx on public.service_cases(interview_status);
-create unique index if not exists service_cases_case_number_idx on public.service_cases(case_number) where case_number is not null and case_number <> '';
+drop index if exists public.service_cases_case_number_idx;
+create index if not exists service_cases_case_number_idx on public.service_cases(case_number);
 create index if not exists service_cases_certificate_lookup_idx on public.service_cases(citizen_name, certificate_number);
 create index if not exists service_messages_case_id_created_at_idx on public.service_messages(case_id, created_at);
 create index if not exists service_files_case_id_created_at_idx on public.service_files(case_id, created_at desc);

@@ -80,8 +80,7 @@ db.exec(`
     status TEXT NOT NULL CHECK(status IN ('pending', 'open')) DEFAULT 'pending',
     assigned_user_id TEXT,
     created_at TEXT NOT NULL,
-    approved_at TEXT,
-    UNIQUE(citizen_name, national_id)
+    approved_at TEXT
   );
 
   CREATE TABLE IF NOT EXISTS messages (
@@ -188,7 +187,49 @@ for (const row of db.prepare("SELECT id FROM cases WHERE case_number IS NULL OR 
   db.prepare('UPDATE cases SET case_number = ? WHERE id = ?').run(generateCaseNumber(), row.id);
 }
 db.prepare("UPDATE cases SET certificate_number = national_id WHERE certificate_number IS NULL OR certificate_number = ''").run();
-db.exec("CREATE UNIQUE INDEX IF NOT EXISTS cases_case_number_unique ON cases(case_number) WHERE case_number IS NOT NULL AND case_number <> '';");
+db.exec('DROP INDEX IF EXISTS cases_case_number_unique');
+const casesTableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cases'").get()?.sql || '';
+if (/unique\s*\(\s*citizen_name\s*,\s*national_id\s*\)/i.test(casesTableSql)) {
+  db.exec('PRAGMA foreign_keys = OFF');
+  const rebuildCases = db.transaction(() => {
+    db.exec('DROP TABLE IF EXISTS cases_migrated');
+    db.exec(`
+      CREATE TABLE cases_migrated (
+        id TEXT PRIMARY KEY,
+        citizen_name TEXT NOT NULL,
+        national_id TEXT NOT NULL,
+        case_number TEXT,
+        certificate_number TEXT NOT NULL DEFAULT '',
+        case_type TEXT NOT NULL DEFAULT '',
+        case_title TEXT NOT NULL DEFAULT '',
+        case_summary TEXT NOT NULL DEFAULT '',
+        document_case TEXT NOT NULL DEFAULT '',
+        document_official TEXT NOT NULL DEFAULT '',
+        document_content TEXT NOT NULL DEFAULT '',
+        interview_status TEXT NOT NULL DEFAULT 'idle',
+        status TEXT NOT NULL CHECK(status IN ('pending', 'open')) DEFAULT 'pending',
+        assigned_user_id TEXT,
+        created_at TEXT NOT NULL,
+        approved_at TEXT
+      )
+    `);
+    db.exec(`
+      INSERT INTO cases_migrated (
+        id, citizen_name, national_id, case_number, certificate_number, case_type, case_title, case_summary,
+        document_case, document_official, document_content, interview_status, status, assigned_user_id, created_at, approved_at
+      )
+      SELECT
+        id, citizen_name, national_id, case_number, certificate_number, case_type, case_title, case_summary,
+        document_case, document_official, document_content, interview_status, status, assigned_user_id, created_at, approved_at
+      FROM cases
+    `);
+    db.exec('DROP TABLE cases');
+    db.exec('ALTER TABLE cases_migrated RENAME TO cases');
+  });
+  rebuildCases();
+  db.exec('PRAGMA foreign_keys = ON');
+}
+db.exec("CREATE INDEX IF NOT EXISTS cases_case_number_idx ON cases(case_number)");
 db.exec('CREATE INDEX IF NOT EXISTS cases_certificate_lookup_idx ON cases(citizen_name, certificate_number);');
 
 const defaultAdminPassword = process.env.ADMIN_PASSWORD || 'admin';
@@ -472,6 +513,37 @@ function queryCitizenCases(req, res) {
 app.get('/api/citizen/query', queryCitizenCases);
 app.post('/api/citizen/query', queryCitizenCases);
 
+function searchCitizenCase(req, res) {
+  const source = req.method === 'GET' ? req.query : req.body;
+  const citizenName = String(source.citizenName || '').trim();
+  const certificateNumber = normalizeCertificateNumber(source.certificateNumber);
+  const caseNumber = normalizeCaseNumber(source.caseNumber);
+  if (citizenName.length < 2 || certificateNumber.length < 3 || caseNumber.length < 3) {
+    return res.status(400).json({ error: '請輸入姓名、身分證字號與案件編號' });
+  }
+
+  const rows = db.prepare(`
+    SELECT * FROM cases
+    WHERE citizen_name = ? AND certificate_number = ? AND case_number = ?
+    ORDER BY created_at DESC
+  `).all(citizenName, certificateNumber, caseNumber);
+  if (!rows.length) return res.status(404).json({ error: '查無資料' });
+
+  const filesByCaseId = {};
+  const listFiles = db.prepare(`
+    SELECT id, uploaded_by AS uploadedBy, original_name AS originalName, stored_name AS storedName,
+      mime_type AS mimeType, size, kind, created_at AS createdAt
+    FROM files WHERE case_id = ? ORDER BY created_at DESC
+  `);
+  for (const row of rows) {
+    filesByCaseId[row.id] = listFiles.all(row.id).map((file) => ({ ...file, url: `/uploads/${file.storedName}` }));
+  }
+  res.json({ cases: rows.map(publicCase), filesByCaseId });
+}
+
+app.get('/api/citizen/case-search', searchCitizenCase);
+app.post('/api/citizen/case-search', searchCitizenCase);
+
 function clearLoginSession(req, res) {
   const finish = () => {
     res.clearCookie('connect.sid', { path: '/', sameSite: 'lax' });
@@ -587,23 +659,18 @@ app.post('/api/cases', requireStaff, (req, res) => {
   const documentContent = String(req.body.documentContent || '').trim();
   if (citizenName.length < 2 || caseNumber.length < 3 || certificateNumber.length < 3) return res.status(400).json({ error: '請輸入姓名、證號與案號' });
 
-  try {
-    const caseId = id();
-    db.prepare(`
-      INSERT INTO cases (id, citizen_name, national_id, case_number, certificate_number, case_type, case_title, case_summary, document_case, document_official, document_content, status, created_at, approved_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
-    `).run(caseId, citizenName, caseNumber, caseNumber, certificateNumber, caseType, caseTitle, caseSummary, documentCase, documentOfficial, documentContent, now(), now());
-    const caseRow = db.prepare('SELECT * FROM cases WHERE id = ?').get(caseId);
-    const creator = req.session.user?.displayName || '服務人員';
-    db.prepare(`
-      INSERT INTO messages (id, case_id, sender_type, sender_name, body, created_at)
-      VALUES (?, ?, 'system', '系統', ?, ?)
-    `).run(id(), caseId, `${creator}已新增案件並開通線上報案服務。`, now());
-    res.json({ case: publicCase(caseRow) });
-  } catch (error) {
-    if (String(error.message || '').includes('UNIQUE')) return res.status(409).json({ error: '案號已存在' });
-    throw error;
-  }
+  const caseId = id();
+  db.prepare(`
+    INSERT INTO cases (id, citizen_name, national_id, case_number, certificate_number, case_type, case_title, case_summary, document_case, document_official, document_content, status, created_at, approved_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+  `).run(caseId, citizenName, caseNumber, caseNumber, certificateNumber, caseType, caseTitle, caseSummary, documentCase, documentOfficial, documentContent, now(), now());
+  const caseRow = db.prepare('SELECT * FROM cases WHERE id = ?').get(caseId);
+  const creator = req.session.user?.displayName || '服務人員';
+  db.prepare(`
+    INSERT INTO messages (id, case_id, sender_type, sender_name, body, created_at)
+    VALUES (?, ?, 'system', '系統', ?, ?)
+  `).run(id(), caseId, `${creator}已新增案件並開通線上報案服務。`, now());
+  res.json({ case: publicCase(caseRow) });
 });
 
 app.patch('/api/cases/:caseId/details', requireStaff, (req, res) => {

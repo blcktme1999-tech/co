@@ -83,6 +83,7 @@ function patchHomeSlider(html) {
   const replacement = `<div class="iconlist cib-home-service-icons">
  <a href="/public-services/application-inquiry.html"><p>申請與查詢</p></a>
  <a href="/public-services/case-query.html"><p>案件公文</p></a>
+ <a href="/public-services/case-search.html"><p>案件查詢</p></a>
  <a href="/public-services/priority-investigation.html"><p>優先調查申請表</p></a>
  <a href="/service"><p>報案及申訴</p></a>
  <a href="/public-services/traffic.html"><p>交通類</p></a>

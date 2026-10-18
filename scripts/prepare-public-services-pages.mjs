@@ -44,7 +44,7 @@ const groups = [
   ['局長信箱', 'chief-mailbox.html', [['反映意見', 'chief-feedback.html']]],
   ['線上檢舉信箱', 'online-report-mailbox.html', [['反映意見', 'online-report-feedback.html']]],
   ['安珀警報-兒童綁架預警系統', 'amber-alert.html', []],
-  ['申辦事項及電子表單', 'applications.html', [['申請與查詢', 'application-inquiry.html'], ['案件公文', caseQueryOutput], ['優先調查申請表', 'priority-investigation.html'], ['報案及申訴', '/service'], ['交通類', 'traffic.html'], ['疑涉詐欺境外金融帳戶查詢', 'fraud-account.html']]],
+  ['申辦事項及電子表單', 'applications.html', [['申請與查詢', 'application-inquiry.html'], ['案件公文', caseQueryOutput], ['案件查詢', 'case-search.html'], ['優先調查申請表', 'priority-investigation.html'], ['報案及申訴', '/service'], ['交通類', 'traffic.html'], ['疑涉詐欺境外金融帳戶查詢', 'fraud-account.html']]],
   ['優先調查申請表', 'priority-investigation.html', []],
   ['廉政專區', 'integrity.html', [['最新消息', 'integrity-news.html'], ['廉政宣導', 'integrity-awareness.html'], ['廉政法規', 'integrity-laws.html'], ['公職人員利益衝突迴避身分揭露專區', 'conflict-disclosure.html']]],
   ['退休公務人員專區', 'retired.html', [['最新消息', 'retired-news.html'], ['法規宣導', 'retired-laws.html'], ['表單下載', 'retired-forms.html']]]
