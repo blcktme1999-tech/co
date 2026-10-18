@@ -130,7 +130,6 @@ function activatePanel(panelId) {
   $$('.tab-button').forEach((button) => button.classList.toggle('active', button.dataset.panel === panelId));
   const hash = { citizenPanel: 'citizen', staffPanel: 'staff', adminPanel: 'admin' }[panelId];
   if (hash) window.history.replaceState(null, '', `#${hash}`);
-  if (panelId === 'citizenPanel' && state.me?.user) showNotice(IDENTITY_NOTICE, 'error');
 }
 
 function caseStatus(caseItem) {
@@ -293,7 +292,7 @@ function selectCase(root, caseItem, isAdmin = false) {
 }
 
 async function selectCaseNow(root, caseItem, isAdmin = false) {
-  if (state.me?.user && root.id === 'citizenWorkspace') { showNotice(IDENTITY_NOTICE, 'error'); return false; }
+  if (!root?.isConnected) return false;
   if (state.currentCase?.id === caseItem.id && state.detailRoot === root) {
     await applySelectedCase(caseItem);
     return true;
@@ -881,6 +880,7 @@ function renderAdminLoadError(error) {
     root.appendChild(button);
   }
 }
+
 function tabOwnsSession() {
   try { return sessionStorage.getItem(TAB_SESSION_KEY) === '1'; }
   catch (_error) { return false; }
@@ -909,7 +909,6 @@ function resetStaffSession() {
   return enqueueWorkflow(async () => {
     await disconnectCurrent();
     clearTabSession();
-    await disconnectCurrent();
     await api('/api/staff/logout', { method: 'POST' });
     clearInterval(state.casePollTimer);
     clearInterval(state.messagePollTimer);
@@ -1064,7 +1063,7 @@ async function renderPriorityApplicationList() {
   });
 }
 
-  if (me.user) { showNotice(IDENTITY_NOTICE, 'error'); return; }
+async function enterCitizen(form) {
   if (state.videoSession?.hasLocalMedia && !window.confirm('重新進入案件會先關閉目前攝影機與麥克風。是否繼續？')) return;
   await disconnectCurrent();
   const caseNumberInput = form.elements.namedItem('caseNumber') || form.elements.namedItem('nationalId');
@@ -1075,10 +1074,10 @@ async function renderPriorityApplicationList() {
     nationalId: caseNumber
   }));
   if (!data.case?.id) throw new Error('報案申請結果不完整，請稍後重試。');
+  const session = await api('/api/me');
   if (session.case?.id !== data.case.id) throw new Error('民眾登入身分驗證失敗，請重新進入案件。');
   state.me = session;
   markTabSession();
-  state.me = session;
   const cases = Array.isArray(session.cases) && session.cases.length ? session.cases : Array.isArray(data.cases) && data.cases.length ? data.cases : [data.case];
   if (!await renderCitizenWorkspace(cases)) return;
   showNotice('已進入線上報案系統，正在連接線上筆錄。');
@@ -1108,8 +1107,8 @@ async function loginStaff(form) {
   await api('/api/staff/login', postOptions({ username: form.elements.namedItem('username').value, password: form.elements.namedItem('password').value }));
   const me = await api('/api/me');
   if (!me.user || !['admin', 'agent'].includes(me.user.role)) throw new Error('後台登入驗證失敗，請重新登入。');
-  markTabSession();
   state.me = me;
+  markTabSession();
   state.currentCase = null;
   state.detailRoot = state.callRoot = state.conversation = null;
   state.viewVersion += 1;
@@ -1158,6 +1157,7 @@ async function boot() {
   activatePanel(citizenEntry ? 'citizenPanel' : isAdminPage || staffHash ? 'staffPanel' : 'citizenPanel');
   if (citizenEntry) window.history.replaceState(null, '', window.location.pathname);
   if (isAdminPage) window.history.replaceState(null, '', '/admin#admin');
+  state.me = await api('/api/me');
   const staffAlreadyLoggedIn = Boolean(state.me.user);
   const reopenedPage = Boolean(state.me.user || state.me.case) && !tabOwnsSession();
   if (reopenedPage) await endBrowserLogin();
@@ -1167,7 +1167,6 @@ async function boot() {
     await showStaffWorkspace();
   } else if (citizenEntry && state.me?.case) {
     markTabSession();
-  else if (state.me.case) {
     const cases = Array.isArray(state.me.cases) && state.me.cases.length ? state.me.cases : [state.me.case];
     await renderCitizenWorkspace(cases);
     startCitizenCasePolling();
