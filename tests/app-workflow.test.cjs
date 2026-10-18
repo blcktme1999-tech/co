@@ -208,6 +208,7 @@ async function harness(options = {}) {
   window.ReportVideoSession = Session;
   const defaultRoute = (url, init) => {
     if (url === '/api/me') return h.me;
+    if (url === '/api/staff/logout' || url === '/api/citizen/logout') { h.me = {}; return { ok: true }; }
     if (url === '/api/cases') return { cases: h.cases };
     if (url === '/api/users') return { users: [] };
     if (url === '/api/priority-applications') return { applications: [] };
@@ -217,8 +218,15 @@ async function harness(options = {}) {
     if (url.endsWith('/statement')) return { case: { ...caseItem(url.split('/')[3]), interviewStatus: JSON.parse(init.body).active ? 'active' : 'idle' } };
     throw new Error(`Unhandled mock route: ${url}`);
   };
+  const storage = new Map();
+  if (options.keepTabSession !== false && (options.me?.user || options.me?.case)) storage.set('cib-service-tab', '1');
+  const sessionStorage = {
+    getItem: (key) => storage.has(key) ? storage.get(key) : null,
+    setItem: (key, value) => storage.set(key, String(value)),
+    removeItem: (key) => storage.delete(key)
+  };
   const context = vm.createContext({
-    window, document: doc, URL, URLSearchParams, console,
+    window, document: doc, URL, URLSearchParams, console, sessionStorage,
     setInterval(fn, ms) { const id = timers.size + 1; timers.set(id, { fn, ms }); return id; }, clearInterval(id) { timers.delete(id); },
     FileReader: class { readAsDataURL() { h.readerCalls++; this.result = 'data:text/plain;base64,eA=='; this.onload(); } },
     fetch: async (url, init = {}) => {
@@ -392,13 +400,34 @@ test('citizen submit uses POST, publishes both; permissions error is inline and 
   assert.equal(h.controllers[0].tracks.size, 2); assert.equal(h.app.state.currentCase.interviewStatus, 'active');
 });
 
-test('citizen entry with staff cookie shows identity notice without PII or media activity', async () => {
+test('citizen page keeps a staff login until the citizen login replaces it', async () => {
   const h = await harness({ me: { user: { role: 'admin', displayName: 'PRIVATE NAME', username: 'PRIVATE LOGIN' }, case: caseItem('c') } });
-  assert.match(h.$('#citizenStatus').textContent, /另一個瀏覽器/);
-  assert.doesNotMatch(h.$('#citizenStatus').textContent, /PRIVATE/);
-  await h.$('#citizenForm').fire('submit'); await h.flush();
-  assert.equal(h.requests.some((request) => request.url === '/api/citizen/start'), false);
+  assert.equal(h.$('#citizenStatus').textContent, '');
+  assert.equal(h.$('#citizenWorkspace').classList.contains('hidden'), true);
+  assert.equal(h.requests.some((request) => request.url === '/api/staff/logout'), false);
   assert.equal(h.controllers.length, 0);
+  h.route = (url, init, fallback) => {
+    if (url === '/api/citizen/start') { h.me = { case: caseItem('c') }; return { status: 'open', case: caseItem('c') }; }
+    return fallback(url, init);
+  };
+  const form = h.$('#citizenForm');
+  form.elements.namedItem('citizenName').value = '測試';
+  form.elements.namedItem('nationalId').value = 'TEST123';
+  await form.fire('submit'); await h.flush();
+  assert.equal(h.requests.some((request) => request.url === '/api/citizen/start' && request.method === 'POST'), true);
+  assert.equal(h.app.state.me.user, undefined);
+  assert.equal(h.$('#citizenWorkspace').classList.contains('hidden'), false);
+});
+
+test('reopened page drops the previous login and shows the form again', async () => {
+  const citizen = await harness({ me: { case: caseItem('c') }, keepTabSession: false });
+  assert.equal(citizen.requests.some((request) => request.url === '/api/citizen/logout' && request.method === 'POST'), true);
+  assert.equal(citizen.$('#citizenWorkspace').classList.contains('hidden'), true);
+  assert.equal(citizen.app.state.currentCase, null);
+  const admin = await harness({ pathname: '/admin.html', me: { user: { role: 'admin' } }, cases: [caseItem('a')], keepTabSession: false });
+  assert.equal(admin.requests.some((request) => request.url === '/api/staff/logout' && request.method === 'POST'), true);
+  assert.equal(Boolean(admin.$('#createUserForm')), false);
+  assert.equal(admin.controllers.length, 0);
 });
 
 test('staff login POST keeps credentials out of URL and verifies me', async () => {

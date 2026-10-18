@@ -435,8 +435,11 @@ app.post('/api/citizen/start', (req, res) => {
     .get(citizenName, caseNumber);
   if (!caseRow) return res.status(404).json({ error: '查無資料' });
 
+  req.session.user = null;
   if (caseRow.status !== 'open') {
     req.session.caseId = null;
+    req.session.citizenName = null;
+    req.session.caseNumber = null;
     return res.json({ status: 'pending', case: publicCase(caseRow) });
   }
 
@@ -450,11 +453,15 @@ function queryCitizenCases(req, res) {
   const source = req.method === 'GET' ? req.query : req.body;
   const citizenName = String(source.citizenName || '').trim();
   const certificateNumber = normalizeCertificateNumber(source.certificateNumber || source.nationalId);
-  if (citizenName.length < 2 || certificateNumber.length < 3) {
-    return res.status(400).json({ error: '請輸入姓名與證號' });
-  }
+  const caseNumber = String(source.caseNumber || '').trim();
+  if (!citizenName || !certificateNumber || !caseNumber) return res.status(404).json({ error: '查無資料' });
 
-  const cases = certificateCases(citizenName, certificateNumber);
+  const cases = db.prepare(`
+    SELECT * FROM cases
+    WHERE citizen_name = ? AND certificate_number = ? AND case_number = ?
+    ORDER BY created_at DESC
+  `).all(citizenName, certificateNumber, caseNumber);
+  if (!cases.length) return res.status(404).json({ error: '查無資料' });
   const filesByCaseId = {};
   for (const item of cases) {
     filesByCaseId[item.id] = db.prepare(`
@@ -469,12 +476,16 @@ function queryCitizenCases(req, res) {
 app.get('/api/citizen/query', queryCitizenCases);
 app.post('/api/citizen/query', queryCitizenCases);
 
-app.post('/api/citizen/logout', (req, res) => {
-  req.session.caseId = null;
-  req.session.citizenName = null;
-  req.session.caseNumber = null;
-  res.json({ ok: true });
-});
+function clearLoginSession(req, res) {
+  const finish = () => {
+    res.clearCookie('connect.sid', { path: '/', sameSite: 'lax' });
+    res.json({ ok: true });
+  };
+  if (!req.session) return finish();
+  req.session.destroy(() => finish());
+}
+
+app.post('/api/citizen/logout', clearLoginSession);
 
 app.get('/api/priority-applications', requireStaff, (_req, res) => {
   res.json({ applications: readPriorityApplications('SELECT * FROM priority_applications ORDER BY created_at DESC') });
@@ -555,13 +566,13 @@ app.post('/api/staff/login', (req, res) => {
     role: user.role,
     displayName: user.display_name
   };
+  req.session.caseId = null;
+  req.session.citizenName = null;
+  req.session.caseNumber = null;
   res.json({ user: req.session.user });
 });
 
-app.post('/api/staff/logout', requireStaff, (req, res) => {
-  req.session.user = null;
-  res.json({ ok: true });
-});
+app.post('/api/staff/logout', clearLoginSession);
 
 app.get('/api/cases', requireStaff, (req, res) => {
   const rows = db.prepare('SELECT * FROM cases ORDER BY created_at DESC').all();

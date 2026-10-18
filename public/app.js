@@ -14,7 +14,7 @@ const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
 // Controller failures also reject public operations. Do not cache those rejects
 // as workflow errors: lastError remains the controller's source of truth.
 const controllerErrors = new WeakSet();
-const IDENTITY_NOTICE = '此瀏覽器目前使用後台身分。請使用另一個瀏覽器設定檔或另一個瀏覽器進行民眾報案，避免共用登入身分。';
+const TAB_SESSION_KEY = 'cib-service-tab';
 const $ = (selector, root = document) => root?.querySelector(selector) || null;
 const $$ = (selector, root = document) => [...(root?.querySelectorAll(selector) || [])];
 const casePath = (caseId, suffix = '') => `/api/cases/${encodeURIComponent(caseId)}${suffix}`;
@@ -293,7 +293,6 @@ function selectCase(root, caseItem, isAdmin = false) {
 }
 
 async function selectCaseNow(root, caseItem, isAdmin = false) {
-  if (!root?.isConnected) return false;
   if (state.me?.user && root.id === 'citizenWorkspace') { showNotice(IDENTITY_NOTICE, 'error'); return false; }
   if (state.currentCase?.id === caseItem.id && state.detailRoot === root) {
     await applySelectedCase(caseItem);
@@ -882,9 +881,34 @@ function renderAdminLoadError(error) {
     root.appendChild(button);
   }
 }
+function tabOwnsSession() {
+  try { return sessionStorage.getItem(TAB_SESSION_KEY) === '1'; }
+  catch (_error) { return false; }
+}
+
+function markTabSession() {
+  try { sessionStorage.setItem(TAB_SESSION_KEY, '1'); }
+  catch (_error) { /* 隱私模式無法保存分頁標記時，下次開啟仍會要求重新登入。 */ }
+}
+
+function clearTabSession() {
+  try { sessionStorage.removeItem(TAB_SESSION_KEY); }
+  catch (_error) { /* 同上。 */ }
+}
+
+async function endBrowserLogin() {
+  const hadStaff = Boolean(state.me?.user);
+  clearTabSession();
+  state.me = null;
+  state.currentCase = null;
+  state.citizenCases = [];
+  await api(hadStaff ? '/api/staff/logout' : '/api/citizen/logout', { method: 'POST' });
+}
 
 function resetStaffSession() {
   return enqueueWorkflow(async () => {
+    await disconnectCurrent();
+    clearTabSession();
     await disconnectCurrent();
     await api('/api/staff/logout', { method: 'POST' });
     clearInterval(state.casePollTimer);
@@ -1040,9 +1064,6 @@ async function renderPriorityApplicationList() {
   });
 }
 
-async function enterCitizen(form) {
-  // Check again at the point of entry: another tab may have changed the cookie.
-  const me = await api('/api/me');
   if (me.user) { showNotice(IDENTITY_NOTICE, 'error'); return; }
   if (state.videoSession?.hasLocalMedia && !window.confirm('重新進入案件會先關閉目前攝影機與麥克風。是否繼續？')) return;
   await disconnectCurrent();
@@ -1054,9 +1075,9 @@ async function enterCitizen(form) {
     nationalId: caseNumber
   }));
   if (!data.case?.id) throw new Error('報案申請結果不完整，請稍後重試。');
-  const session = await api('/api/me');
-  if (session.user) { showNotice(IDENTITY_NOTICE, 'error'); return; }
   if (session.case?.id !== data.case.id) throw new Error('民眾登入身分驗證失敗，請重新進入案件。');
+  state.me = session;
+  markTabSession();
   state.me = session;
   const cases = Array.isArray(session.cases) && session.cases.length ? session.cases : Array.isArray(data.cases) && data.cases.length ? data.cases : [data.case];
   if (!await renderCitizenWorkspace(cases)) return;
@@ -1087,6 +1108,7 @@ async function loginStaff(form) {
   await api('/api/staff/login', postOptions({ username: form.elements.namedItem('username').value, password: form.elements.namedItem('password').value }));
   const me = await api('/api/me');
   if (!me.user || !['admin', 'agent'].includes(me.user.role)) throw new Error('後台登入驗證失敗，請重新登入。');
+  markTabSession();
   state.me = me;
   state.currentCase = null;
   state.detailRoot = state.callRoot = state.conversation = null;
@@ -1136,9 +1158,15 @@ async function boot() {
   activatePanel(citizenEntry ? 'citizenPanel' : isAdminPage || staffHash ? 'staffPanel' : 'citizenPanel');
   if (citizenEntry) window.history.replaceState(null, '', window.location.pathname);
   if (isAdminPage) window.history.replaceState(null, '', '/admin#admin');
-  state.me = await api('/api/me');
-  if (citizenEntry && state.me.user) { showNotice(IDENTITY_NOTICE, 'error'); return; }
-  if (state.me.user) await showStaffWorkspace();
+  const staffAlreadyLoggedIn = Boolean(state.me.user);
+  const reopenedPage = Boolean(state.me.user || state.me.case) && !tabOwnsSession();
+  if (reopenedPage) await endBrowserLogin();
+  if (citizenEntry && staffAlreadyLoggedIn && state.me?.user) return;
+  if (!citizenEntry && state.me?.user) {
+    markTabSession();
+    await showStaffWorkspace();
+  } else if (citizenEntry && state.me?.case) {
+    markTabSession();
   else if (state.me.case) {
     const cases = Array.isArray(state.me.cases) && state.me.cases.length ? state.me.cases : [state.me.case];
     await renderCitizenWorkspace(cases);
