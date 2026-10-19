@@ -422,13 +422,17 @@ function requireAdmin(req, res, next) {
 }
 
 function requireCitizenCase(req, res, next) {
-  if (!req.session.caseId) return res.status(401).json({ error: '請先以姓名與案號進入服務' });
+  if (!req.session.caseId) return res.status(401).json({ error: '請先以姓名與身分證號進入服務' });
   next();
 }
 
 function canAccessCase(req, caseId) {
+  if (req.session.user) return true;
   if (req.session.caseId === caseId) return true;
-  return Boolean(req.session.user);
+  if (!req.session.citizenName || !req.session.certificateNumber) return false;
+  const row = db.prepare('SELECT id FROM cases WHERE id = ? AND citizen_name = ? AND certificate_number = ?')
+    .get(caseId, req.session.citizenName, req.session.certificateNumber);
+  return Boolean(row);
 }
 
 function certificateCases(citizenName, certificateNumber) {
@@ -458,36 +462,38 @@ app.get('/api/me', (req, res) => {
   const caseRow = req.session.caseId
     ? db.prepare('SELECT * FROM cases WHERE id = ?').get(req.session.caseId)
     : null;
-  const cases = !req.session.user && req.session.citizenName && req.session.caseNumber
-    ? db.prepare('SELECT * FROM cases WHERE citizen_name = ? AND case_number = ? ORDER BY created_at DESC')
-      .all(req.session.citizenName, req.session.caseNumber)
+  const cases = !req.session.user && req.session.citizenName && req.session.certificateNumber
+    ? db.prepare('SELECT * FROM cases WHERE citizen_name = ? AND certificate_number = ? ORDER BY created_at DESC')
+      .all(req.session.citizenName, req.session.certificateNumber)
     : [];
   res.json({ user: currentUser(req), case: publicCase(caseRow || cases[0]), cases: cases.map(publicCase) });
 });
 
 app.post('/api/citizen/start', (req, res) => {
   const citizenName = String(req.body.citizenName || '').trim();
-  const caseNumber = normalizeCaseNumber(req.body.caseNumber || req.body.nationalId);
-  if (citizenName.length < 2 || caseNumber.length < 3) {
-    return res.status(400).json({ error: '請輸入姓名與案號' });
+  const certificateNumber = normalizeCertificateNumber(req.body.certificateNumber || req.body.nationalId);
+  if (citizenName.length < 2 || certificateNumber.length < 3) {
+    return res.status(400).json({ error: '請輸入姓名與身分證號' });
   }
 
-  const caseRow = db.prepare('SELECT * FROM cases WHERE citizen_name = ? AND case_number = ?')
-    .get(citizenName, caseNumber);
-  if (!caseRow) return res.status(404).json({ error: '查無資料' });
+  const cases = certificateCases(citizenName, certificateNumber);
+  const caseRow = cases.find((item) => item.status === 'open') || null;
+  if (!cases.length) return res.status(404).json({ error: '查無資料' });
 
   req.session.user = null;
-  if (caseRow.status !== 'open') {
+  if (!caseRow) {
     req.session.caseId = null;
     req.session.citizenName = null;
+    req.session.certificateNumber = null;
     req.session.caseNumber = null;
-    return res.json({ status: 'pending', case: publicCase(caseRow) });
+    return res.status(403).json({ error: '案件尚未開通' });
   }
 
   req.session.caseId = caseRow.id;
   req.session.citizenName = citizenName;
-  req.session.caseNumber = caseNumber;
-  res.json({ status: 'open', case: publicCase(caseRow) });
+  req.session.certificateNumber = certificateNumber;
+  req.session.caseNumber = caseRow.case_number || '';
+  res.json({ status: 'open', case: publicCase(caseRow), cases: cases.map(publicCase) });
 });
 
 function queryCitizenCases(req, res) {
@@ -636,6 +642,7 @@ app.post('/api/staff/login', (req, res) => {
   };
   req.session.caseId = null;
   req.session.citizenName = null;
+  req.session.certificateNumber = null;
   req.session.caseNumber = null;
   res.json({ user: req.session.user });
 });

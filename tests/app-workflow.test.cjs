@@ -112,7 +112,7 @@ function makeDocument() {
   doc.body = doc.createElement('body'); doc.body.dataset.entry = 'citizen';
   doc.querySelector = (selector) => doc.body.querySelector(selector);
   doc.querySelectorAll = (selector) => doc.body.querySelectorAll(selector);
-  doc.body.innerHTML = `<section id="citizenPanel" class="panel active"><form id="citizenForm"><input name="citizenName"><input name="nationalId"><button type="submit">我要視訊報案</button></form><div id="citizenStatus"></div><div id="citizenWorkspace" class="hidden"></div></section>
+  doc.body.innerHTML = `<section id="citizenPanel" class="panel active"><form id="citizenForm"><input name="citizenName"><input name="certificateNumber"><button type="submit">我要視訊報案</button></form><div id="citizenStatus"></div><div id="citizenWorkspace" class="hidden"></div></section>
     <section id="staffPanel" class="panel"><div id="staffLogin"><form id="staffLoginForm"><input name="username"><input name="password"><button type="submit">登入</button></form></div><div id="staffWorkspace"></div></section>
     <section id="adminPanel" class="panel"><div id="adminWorkspace"></div></section><template id="caseWorkspaceTemplate"></template>`;
   const content = doc.createElement('fragment');
@@ -389,10 +389,10 @@ test('citizen submit uses POST, publishes both; permissions error is inline and 
     return fallback(url, init);
   };
   h.publishError = new Error('請允許攝影機與麥克風');
-  const form = h.$('#citizenForm'); form.elements.namedItem('citizenName').value = '測試'; form.elements.namedItem('nationalId').value = 'TEST123';
+  const form = h.$('#citizenForm'); form.elements.namedItem('citizenName').value = '測試'; form.elements.namedItem('certificateNumber').value = 'TEST123';
   await form.fire('submit'); await h.flush();
   const request = h.requests.find((item) => item.url === '/api/citizen/start');
-  assert.equal(request.method, 'POST'); assert.equal(JSON.parse(request.body).nationalId, 'TEST123');
+  assert.equal(request.method, 'POST'); assert.equal(JSON.parse(request.body).certificateNumber, 'TEST123');
   assert.equal(h.$('#citizenWorkspace').classList.contains('hidden'), false);
   assert.match(h.$('[data-slot="mediaError"]', h.app.state.callRoot).textContent, /請允許/);
   h.publishError = null;
@@ -412,7 +412,7 @@ test('citizen page keeps a staff login until the citizen login replaces it', asy
   };
   const form = h.$('#citizenForm');
   form.elements.namedItem('citizenName').value = '測試';
-  form.elements.namedItem('nationalId').value = 'TEST123';
+  form.elements.namedItem('certificateNumber').value = 'TEST123';
   await form.fire('submit'); await h.flush();
   assert.equal(h.requests.some((request) => request.url === '/api/citizen/start' && request.method === 'POST'), true);
   assert.equal(h.app.state.me.user, undefined);

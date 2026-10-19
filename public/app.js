@@ -1066,12 +1066,11 @@ async function renderPriorityApplicationList() {
 async function enterCitizen(form) {
   if (state.videoSession?.hasLocalMedia && !window.confirm('重新進入案件會先關閉目前攝影機與麥克風。是否繼續？')) return;
   await disconnectCurrent();
-  const caseNumberInput = form.elements.namedItem('caseNumber') || form.elements.namedItem('nationalId');
-  const caseNumber = caseNumberInput?.value || '';
+  const certificateInput = form.elements.namedItem('certificateNumber') || form.elements.namedItem('nationalId');
+  const certificateNumber = certificateInput?.value || '';
   const data = await api('/api/citizen/start', postOptions({
     citizenName: form.elements.namedItem('citizenName').value,
-    caseNumber,
-    nationalId: caseNumber
+    certificateNumber
   }));
   if (!data.case?.id) throw new Error('報案申請結果不完整，請稍後重試。');
   const session = await api('/api/me');

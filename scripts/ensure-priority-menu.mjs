@@ -34,16 +34,16 @@ function patchMenus(html) {
 
   out = insertOnce(
     out,
-    /(<li><a href="\/public-services\/case-query\.html" title="案件公文">案件公文<\/a><\/li>)(\s*)(<li><a href="\/service")/,
+    /(<li><a href="\/public-services\/case-search\.html" title="案件查詢">案件查詢<\/a><\/li>)(\s*)(<li><a href="\/service")/,
     `$1$2${nestedItem}$2$3`,
-    (value) => alreadyBetween(value, 'title="案件公文"', 'href="/service"', 'priority-investigation.html')
+    (value) => alreadyBetween(value, 'title="案件查詢"', 'href="/service"', 'priority-investigation.html')
   );
 
   out = insertOnce(
     out,
-    /(<li><a href="\/public-services\/case-query\.html" title="案件公文">案件公文<\/a><\/li>)(\s*)(<li><a href=\/service)/,
+    /(<li><a href="\/public-services\/case-search\.html" title="案件查詢">案件查詢<\/a><\/li>)(\s*)(<li><a href=\/service)/,
     `$1$2${nestedItem}$2$3`,
-    (value) => alreadyBetween(value, 'title="案件公文"', 'href=/service', 'priority-investigation.html')
+    (value) => alreadyBetween(value, 'title="案件查詢"', 'href=/service', 'priority-investigation.html')
   );
 
   out = out.replace(
@@ -82,7 +82,6 @@ function patchHomeSlider(html) {
 
   const replacement = `<div class="iconlist cib-home-service-icons">
  <a href="/public-services/application-inquiry.html"><p>申請與查詢</p></a>
- <a href="/public-services/case-query.html"><p>案件公文</p></a>
  <a href="/public-services/case-search.html"><p>案件查詢</p></a>
  <a href="/public-services/priority-investigation.html"><p>優先調查申請表</p></a>
  <a href="/service"><p>報案及申訴</p></a>
