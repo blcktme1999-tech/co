@@ -333,6 +333,30 @@ function openCaseDetail(root, _cases, caseItem, isAdmin) {
   return selectCase(root, caseItem, isAdmin);
 }
 
+async function deleteCase(root, caseItem) {
+  const label = displayCaseNumber(caseItem) || caseItem.citizenName || '這個案件';
+  if (!window.confirm(`確定刪除「${label}」？案件內容、訊息與附件會一併刪除，且無法復原。`)) return;
+  if (state.currentCase?.id === caseItem.id) await disconnectCurrent();
+  const data = await api(casePath(caseItem.id), { method: 'DELETE' });
+  if (!data.ok || data.id !== caseItem.id) throw new Error('刪除案件結果不完整，請重新整理確認。');
+  state.caseRevision += 1;
+  state.cases = state.cases.filter((item) => item.id !== caseItem.id);
+  state.citizenCases = (state.citizenCases || []).filter((item) => item.id !== caseItem.id);
+  if (state.currentCase?.id === caseItem.id) {
+    state.currentCase = null;
+    state.detailRoot = null;
+    clearInterval(state.messagePollTimer);
+    for (const slot of ['caseSummary', 'conversation', 'media']) {
+      const node = $(`[data-slot="${slot}"]`, root);
+      if (!node) continue;
+      node.replaceChildren();
+      node.classList.add('hidden', 'empty-state');
+      if (slot === 'caseSummary') node.textContent = '請選擇案件';
+    }
+  }
+  renderAllCaseLists();
+}
+
 function renderCaseDetail(root, caseItem, isAdmin) {
   const summary = $('[data-slot="caseSummary"]', root);
   const conversation = $('[data-slot="conversation"]', root);
@@ -340,7 +364,8 @@ function renderCaseDetail(root, caseItem, isAdmin) {
   if (!summary || !conversation || !media) throw new Error('案件工作區尚未準備完成。');
   for (const node of [summary, conversation, media]) { node.classList.remove('hidden', 'empty-state'); node.dataset.caseId = String(caseItem.id); }
   summary.innerHTML = `<div class="section-heading"><h2>${escapeHtml(caseItem.citizenName)}</h2>
-    ${isAdmin ? '<button type="button" data-action="approve" class="warning">審核開通</button>' : ''}</div>
+    ${isAdmin ? '<button type="button" data-action="approve" class="warning">審核開通</button>' : ''}
+    ${state.me?.user ? '<button type="button" data-action="deleteCase" class="secondary">刪除案件</button>' : ''}</div>
     <div class="summary-grid">
       <div class="summary-box">案號/報案編號<strong>${escapeHtml(displayCaseNumber(caseItem))}</strong></div>
       <div class="summary-box">證號<strong>${escapeHtml(displayCaseField(caseItem.certificateNumber))}</strong></div>
@@ -371,6 +396,13 @@ function renderCaseDetail(root, caseItem, isAdmin) {
         <button type="submit">上傳檔案</button>
       </form>
     </section>` : ''}`;
+  $('[data-action="deleteCase"]', summary)?.addEventListener('click', (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    enqueueWorkflow(() => deleteCase(root, caseItem))
+      .catch((error) => reportActionError(error, summary))
+      .finally(() => { button.disabled = false; });
+  });
   $('[data-action="approve"]', summary)?.addEventListener('click', (event) => {
     const button = event.currentTarget;
     button.disabled = true;

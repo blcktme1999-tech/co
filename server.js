@@ -717,6 +717,23 @@ app.post('/api/cases/:caseId/approve', requireAdmin, (req, res) => {
   res.json({ case: publicCase(updated) });
 });
 
+app.delete('/api/cases/:caseId', requireStaff, (req, res) => {
+  const caseRow = db.prepare('SELECT id FROM cases WHERE id = ?').get(req.params.caseId);
+  if (!caseRow) return res.status(404).json({ error: '找不到案件' });
+  const files = db.prepare('SELECT stored_name FROM files WHERE case_id = ?').all(req.params.caseId);
+  for (const file of files) {
+    const target = path.join(UPLOAD_DIR, path.basename(file.stored_name));
+    if (fs.existsSync(target)) fs.unlinkSync(target);
+  }
+  db.transaction(() => {
+    db.prepare('DELETE FROM files WHERE case_id = ?').run(req.params.caseId);
+    db.prepare('DELETE FROM messages WHERE case_id = ?').run(req.params.caseId);
+    db.prepare('DELETE FROM cases WHERE id = ?').run(req.params.caseId);
+  })();
+  if (req.session.caseId === req.params.caseId) req.session.caseId = null;
+  res.json({ ok: true, id: req.params.caseId });
+});
+
 app.get('/api/cases/:caseId/messages', (req, res) => {
   if (!canAccessCase(req, req.params.caseId)) return res.status(403).json({ error: '無權查看此案件' });
   const rows = db.prepare(`
